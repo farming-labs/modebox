@@ -10,6 +10,8 @@ use super::*;
 pub struct MemoryStore {
     objects: Mutex<BTreeMap<Key, (Bytes, Meta)>>,
     read_only: bool,
+    /// Cap on the total bytes held; `None` is unlimited.
+    max_bytes: Option<u64>,
 }
 
 impl MemoryStore {
@@ -20,6 +22,17 @@ impl MemoryStore {
     pub fn read_only(mut self) -> Self {
         self.read_only = true;
         self
+    }
+
+    /// Refuse writes that would make the store hold more than `bytes`.
+    pub fn with_limit(mut self, bytes: u64) -> Self {
+        self.max_bytes = Some(bytes);
+        self
+    }
+
+    /// Total bytes currently held.
+    pub fn size(&self) -> u64 {
+        self.objects.lock().unwrap().values().map(|(b, _)| b.len() as u64).sum()
     }
 
     /// Seed contents without going through preconditions.
@@ -106,6 +119,15 @@ impl Store for MemoryStore {
                     return Err(StoreError::PreconditionFailed(key.to_string()));
                 }
                 _ => {}
+            }
+            if let Some(max) = self.max_bytes {
+                let others: u64 = objects.iter().filter(|(k, _)| *k != key).map(|(_, (b, _))| b.len() as u64).sum();
+                if others + body.len() as u64 > max {
+                    return Err(StoreError::QuotaExceeded(format!(
+                        "{key}: memory store would hold {} bytes, over its {max} byte limit",
+                        others + body.len() as u64
+                    )));
+                }
             }
             let mut meta = Self::meta(key, &body);
             if opts.content_type.is_some() {
