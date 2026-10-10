@@ -1,0 +1,7 @@
+[build]
+target = "wasm32-unknown-unknown"
+
+[target.wasm32-unknown-unknown]
+# 4 MiB shadow stack. QuickJS's own stack check (JS_SetMaxStackSize) is set
+# below this so deep recursion becomes a catchable RangeError, not a trap.
+rustflags = ["-C", "link-arg=-zstack-size=4194304"]
