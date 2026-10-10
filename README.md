@@ -1,0 +1,205 @@
+# modebox
+
+Run untrusted, agent-written JavaScript/TypeScript in a WebAssembly sandbox whose only authority is the functions you hand it, and plug it into any agent harness as **code mode** over MCP.
+
+It's a Rust rewrite and extension of the idea behind Vercel's [Run SDK](https://run-sdk.dev): same model (QuickJS in wasm, host functions as capabilities, interrupt/resume), different engineering underneath, plus the harness-level pieces Run doesn't have.
+
+```
+            agent harness (opencode · Claude Code · Codex · AI SDK · your app)
+                 │ MCP: execute / types / approve          │ Node · Rust API
+                 ▼                                          ▼
+ ┌──────────────────────────── modebox host (Rust) ────────────────────────────┐
+ │ tools: MCP servers bridged as typed fns · sh() · your functions             │
+ │ policy: allow / approve (glob, predicate) · limits · fuel · virtual clock   │
+ │ snapshots: XOR-delta vs base image → zstd → XChaCha20-Poly1305 token        │
+ │  ┌──────────────── wasmtime (pooling, CoW, epoch + fuel) ───────────────┐   │
+ │  │  QuickJS-ng + Rust bridge, pre-initialized with wizer                │   │
+ │  │  imports: emit(event), clock()   ← no WASI, no fs, no net, no env    │   │
+ │  └──────────────────────────────────────────────────────────────────────┘   │
+ │ sh(): Seatbelt (macOS) / bubblewrap (Linux): workspace-only writes,         │
+ │       secret dirs unreadable, no network unless enabled, scrubbed env       │
+ └─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## What's different from Run
+
+| | Vercel Run | modebox |
+|---|---|---|
+| Host runtime | Node worker threads | Rust library; Node binding, CLI, MCP server |
+| Startup per run | fresh QuickJS context (~3.5 ms) | pre-initialized image, instantiated per run (~0.1 ms) |
+| Resume | **replays** the script against a ledger; O(history) | **restores a VM snapshot**; nothing re-executes |
+| Continuation token | signed, **readable**, **reusable** | encrypted + authenticated, single-use, bound to image + tool set |
+| Token size after 200 tool calls | 1.13 MB | 17 KB |
+| Boundary codec | devalue in interpreted JS (~1 MB/s) | Rust walking QuickJS values (1 MB string: 11 ms vs 531 ms) |
+| CPU limits | wall clock + a hidden work cap (#76) | wall clock **and** deterministic fuel, cumulative across resumes |
+| Console | written to the host's stdout | captured, Node-style formatted, streamed as events |
+| Concurrency over the limit | run fails | calls queue |
+| Tool errors seen by the code | redacted to "Host function failed." | real message and `code` |
+| Approvals | the host function must throw an interrupt | declarative policy per tool (`Approval::Always`, globs, predicates), batched |
+| Persistent state between runs | no | sessions: notebook-style VM, savable as a token |
+| Determinism | seeded `Math.random`, `Date` hack | seeded `Math.random` + `crypto`, virtual clock (timers instant), fuel |
+| Web APIs | missing `TextEncoder`, `atob`, timers, `structuredClone` (despite docs) | all present |
+| TypeScript | Node's type stripping | swc strip-only: error line:col match what the model wrote; enums supported |
+| Shell | — | `sh()` in an OS sandbox |
+| Harness integration | AI SDK code mode | MCP server with 3 approval paths, opencode plugin |
+
+## Benchmarks
+
+Apple M-series, Node 24, same workloads. `bench/compare.mjs` runs the identical script against both packages, with JS host functions on both sides.
+
+| workload | Run 2.1.7 | modebox (Node) | |
+|---|---:|---:|---:|
+| trivial run | 3.57 ms | **0.12 ms** | 29× |
+| one host call | 4.13 ms | **0.18 ms** | 23× |
+| 200 sequential host calls in one run | 26.0 ms | **7.8 ms** | 3.3× |
+| 8 parallel runs, per run | 1.48 ms | **0.06 ms** | 24× |
+| return a 1 MB string | 531 ms | **11 ms** | 47× |
+| host returns 5,000 rows | 62 ms | **23 ms** | 2.7× |
+| interrupt + resume | 18.5 ms | **4.0 ms** | 4.7× |
+| token after 200 host calls | 1.13 MB | **17 KB** | 66× smaller |
+| resume after 200 host calls | 30.9 ms | **2.2 ms** | 14× |
+| CPU: sum 1..10M | 488 ms | 511 ms | ≈ (same interpreter) |
+
+From Rust directly (`cargo run --release -p modebox-core --example bench`), a trivial run is 0.096 ms, interrupt + resume is 1.8 ms, and resume after 200 calls is 0.28 ms.
+
+**Where it isn't faster:** CPU-bound JS. Both run the QuickJS bytecode interpreter compiled to wasm. Fuel metering costs about 10%; turn it off with `EngineConfig { metering: false }`. If heavy compute matters, a V8-isolate tier is the next step (see the roadmap).
+
+## Quick start
+
+### CLI
+
+```bash
+./scripts/build-guest.sh                 # QuickJS → wasm (needs wasi-sdk; prebuilt .wasm is checked in)
+cargo build --release -p modebox-cli
+./target/release/modebox run -e 'const xs = [3, 1, 2]; xs.sort()'
+./target/release/modebox -c modebox.example.json types     # TypeScript API the model sees
+./target/release/modebox -c modebox.example.json run script.ts   # prompts y/N for approvals
+./target/release/modebox sh -- 'npm test'                  # one command in the OS sandbox
+./target/release/modebox -c modebox.json mcp               # MCP server (stdio)
+```
+
+`modebox.json` (`mcpServers` has the same shape as `.mcp.json`):
+
+```json
+{
+  "mcpServers": { "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"] } },
+  "approve": ["github.create_*", "github.merge_*"],
+  "shell": { "enabled": true, "network": false, "allow": ["ls", "rg", "git status", "git diff"] },
+  "limits": { "timeoutMs": 60000, "maxHostCalls": 500 }
+}
+```
+
+Shell commands that don't match `allow` (whole-word prefix, and never anything with `;`, `&&`, `|`, `$(`, or redirects) suspend for approval.
+
+### Rust
+
+```rust
+use modebox_core::*;
+
+let engine = Engine::new()?;                     // compile/cache + pre-init, once per process
+let mut tools = Toolbox::new();
+tools.func("db.users", |_c: Call| async { Ok(Value::from(serde_json::json!([{"name": "ada"}]))) });
+tools.add(Tool::new("bank.transfer", transfer).approval(Approval::Always));
+
+let r = engine.run("const u = await db.users(); u.length", &tools, RunOptions::default()).await;
+match r.outcome {
+    Outcome::Completed(v) => println!("{v:?}"),
+    Outcome::Failed(e) => eprintln!("{e}"),
+    Outcome::Suspended(s) => {
+        // ask a human, later, maybe in another process:
+        let r = engine.resume(&s.continuation, [(s.interrupts[0].id, Resolution::Approve)], &tools, RunOptions::default()).await;
+    }
+}
+
+// notebook-style session
+let mut s = engine.session(tools, RunOptions::default());
+s.run("const users = await db.users()").await;
+s.run("users.filter(u => u.name.startsWith('a'))").await;
+let token = s.save().await;                      // restore with engine.restore_session(token, ...)
+```
+
+### Node (Run-compatible)
+
+```js
+import { run, createRunner, getHostFunctionContext, requireApproval } from 'modebox';
+
+const { value, logs, stats } = await run({
+  source: 'const d = await tools.double(21); console.log(d); d',
+  hostFunctions: { tools: { double: (x) => x * 2 } },
+});
+
+const runner = createRunner({ continuationSecret: process.env.SECRET });
+const r = await runner.run({ source, hostFunctions: { bank: { send: requireApproval(send) } } });
+if (r.status === 'interrupted') {
+  await runner.run({ hostFunctions, continuation: r.continuation,
+                     resolutions: [{ interruptionId: r.interruptions[0].id, value: true }] });
+}
+```
+
+## Files: any storage as one object store
+
+`fs.*` gives sandboxed code one object-store API over **mounts**. A mount can be a local folder, memory, S3 / R2 / MinIO, GCS, Azure, HTTP, or your own backend implementing the six-method `Store` trait. Each mount is `read-only`, `staged` (writes wait for an approved commit) or `direct`. The full contract, the conformance suite, and a proposed out-of-process driver protocol are in [docs/storage.md](docs/storage.md).
+
+```ts
+const { objects } = await fs.list({ prefix: 'src/', glob: '**/*.ts' });   // respects .gitignore
+const cfg = await fs.get({ key: 'package.json', as: 'json' });            // text | bytes | json, byte ranges
+const hits = await fs.grep({ pattern: 'oldApi', glob: 'src/**' });        // searches staged versions too
+await fs.put({ key: 'src/a.ts', body: newSource, ifMatch: etag });        // staged, optimistic concurrency
+await fs.changes();                                                       // unified diffs of what's staged
+await fs.commit({ message: 'rename oldApi' });                            // pauses for approval, then writes
+```
+
+- **Mounts.** Configure them in `modebox.json` under `fs.mounts`, for example `{"datasets/": {"url": "s3://bucket/prefix", "readOnly": true}}`. Credentials are given as `$ENV` references and stay on the host.
+- **Jail.** `..` is rejected and symlinks are resolved and checked against the mount root. `.env*`, keys, `.git/` and similar are denied by default.
+- **Staging.** Staged writes are content-addressed blobs. They're sealed into continuation tokens and saved sessions, so a run paused in one process and approved in another applies exactly what was staged.
+- **Commit.** Commits use conditional writes (`IfMatch` / `IfNotExists`). Anything that changed in its store since the code first read it is reported as a conflict instead of being overwritten.
+
+## Integrations
+
+**opencode**, in `integrations/opencode/`:
+- `opencode.json` adds the MCP server. MCP requests time out after 5 s by default, so the snippet raises the timeout. It also sets `"modebox_approve": "ask"` because opencode allows every tool by default.
+- `.opencode/plugin/modebox-sandbox.ts` routes every built-in `bash` call through `modebox sh`. opencode has no OS sandbox of its own, and this adds one without changing how the agent works.
+
+**Claude Code**: `integrations/claude-code/.mcp.json`. **Codex**: `integrations/codex/config.toml`.
+
+How approvals reach the user, per client capability (all three are exercised by `tests/fixtures/drive-mcp.mjs`):
+1. **MCP 2026-07-28 clients**: the server returns `input_required` with an elicitation, and the sealed VM goes in `requestState`. The server keeps no state, and an approval can arrive after a restart.
+2. **Clients with elicitation**: the user gets an inline prompt and the run continues.
+3. **Everyone else**: the run pauses and returns an id. `approve` resumes it, and the harness's permission prompt for that tool is the user's decision.
+
+## Security model
+
+- **The guest can't reach anything.** The wasm module imports exactly two functions: `modebox.emit` (events to the host) and a clock. There's no WASI at all, so no files, sockets, env or randomness except what the host seeds. `fetch`, `require`, `process` and `import()` don't exist.
+- **The only authority is your tools.** The host validates every call name against the toolbox. Arguments and results are size-limited and depth-limited, with cycle detection.
+- **Defense in depth.** A memory-safety bug in QuickJS stays inside wasm linear memory, behind wasmtime guard pages, Cranelift bounds checks, and a per-instance memory cap.
+- **Tokens.** They are XChaCha20-Poly1305 sealed, so they're confidential and tamper-proof, and they expire. Each is bound to the exact engine image (a hash of the base memory) and to a hash of the tool set. They're single-use within a process; use a shared store if you resume across processes.
+- **Resumes can't widen limits.** The limits are sealed into the token.
+- **`sh()` runs under Seatbelt or bubblewrap.** Writes are allowed only under the workspace and temp dirs. `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.docker`, `~/.config/gh` and `.netrc` can't be read. Network is off by default, the environment is scrubbed, and the whole process group is killed on timeout.
+
+## Limitations / roadmap
+
+- **CPU-heavy JS:** same speed as Run. Next: an opt-in V8-isolate tier in a separate sandboxed process.
+- **Missing web APIs:** `Intl` and `URL` aren't available yet.
+- **Linux shell sandbox:** the bubblewrap path is implemented but was only tested on macOS here. Windows has no shell sandbox.
+- **Node binding:** built for darwin-arm64 only. Prebuilds per platform via `@napi-rs/cli` are TODO.
+- **Single-use tokens across processes:** tracking is in memory. A `ContinuationStore` trait is next.
+- **Python:** a Monty or CPython-wasi guest would reuse the same snapshot and resume machinery.
+- **Shared policy file:** one policy format that imports/exports opencode, Codex and Claude Code permission configs.
+
+## Development
+
+```
+guest/                 QuickJS guest (wasm32-unknown-unknown): event loop, codec, prelude
+crates/modebox-core    engine, run loop, snapshots, sessions, tools, TS, d.ts, shell
+crates/modebox-cli     `modebox` binary: run / resume / sh / types / mcp
+crates/modebox-node    napi-rs binding; packages/modebox is the JS API
+bench/                 compare.mjs (Run vs modebox), results
+tests/fixtures         notes-mcp.mjs (downstream MCP server), drive-mcp.mjs (harness simulator)
+```
+
+```bash
+cargo test --release --workspace                  # 60 Rust tests
+(cd packages/modebox && npm test)                 # Node tests (after copying the built .node)
+node tests/fixtures/drive-mcp.mjs legacy|elicit|mrtr
+node bench/compare.mjs run && node bench/compare.mjs modebox
+```
