@@ -6,7 +6,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use modebox_core::shell::{ShellPolicy, command_of, shell_tool};
+use modebox_core::shell::{ShellPolicy, command_of, sandbox_status, shell_tool};
 use modebox_core::{Approval, Call, Tool, ToolError, Toolbox, Value};
 use anyhow::{Context, Result};
 use rmcp::model::{CallToolRequestParams, CallToolResult};
@@ -121,6 +121,9 @@ pub async fn build(cfg: &Config) -> Result<Bridge> {
     }
 
     if cfg.shell.enabled {
+        if let Err(why) = sandbox_status() {
+            eprintln!("modebox: warning: shell is enabled but sh() will fail: {why}");
+        }
         let mut policy = ShellPolicy::new(cfg.workspace());
         policy.network = cfg.shell.network;
         policy.writable = cfg.shell.writable.clone();

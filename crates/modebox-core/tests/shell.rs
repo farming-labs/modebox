@@ -2,8 +2,21 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use modebox_core::shell::{ShellPolicy, sandbox_kind, shell_tool};
+use modebox_core::shell::{ShellPolicy, sandbox_status, shell_tool};
 use modebox_core::*;
+
+/// Whether the OS sandbox can run here. Tests skip without one, unless
+/// MODEBOX_REQUIRE_SANDBOX is set (CI sets it so a broken sandbox fails).
+fn sandboxed() -> bool {
+    match sandbox_status() {
+        Ok(_) => true,
+        Err(why) if std::env::var_os("MODEBOX_REQUIRE_SANDBOX").is_some() => panic!("no OS sandbox: {why}"),
+        Err(why) => {
+            eprintln!("skipping: no OS sandbox: {why}");
+            false
+        }
+    }
+}
 
 fn scratch(name: &str) -> PathBuf {
     let p = std::env::temp_dir().join(format!("modebox-shell-test-{name}-{}", std::process::id()));
@@ -24,7 +37,7 @@ async fn sh(policy: ShellPolicy, code: &str) -> Value {
 
 #[tokio::test]
 async fn runs_commands_and_captures_output() {
-    if sandbox_kind().is_none() { return; }
+    if !sandboxed() { return; }
     let root = scratch("basic");
     let v = sh(ShellPolicy::new(&root), "const r = await sh('echo hello; echo oops 1>&2; exit 3'); r").await;
     assert_eq!(v.get("stdout"), Some(&Value::from("hello\n")));
@@ -34,7 +47,7 @@ async fn runs_commands_and_captures_output() {
 
 #[tokio::test]
 async fn writes_are_confined_to_the_workspace() {
-    if sandbox_kind().is_none() { return; }
+    if !sandboxed() { return; }
     let root = scratch("writes");
     // Not under the system temp dir, which the policy leaves writable.
     let outside = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("outside-{}", std::process::id()));
@@ -54,7 +67,7 @@ async fn writes_are_confined_to_the_workspace() {
 
 #[tokio::test]
 async fn secret_dirs_are_unreadable() {
-    if sandbox_kind().is_none() { return; }
+    if !sandboxed() { return; }
     let root = scratch("secrets-root");
     let secrets = scratch("secrets");
     std::fs::write(secrets.join("id_rsa"), "PRIVATE KEY").unwrap();
@@ -66,7 +79,7 @@ async fn secret_dirs_are_unreadable() {
 
 #[tokio::test]
 async fn cwd_cannot_escape_the_workspace() {
-    if sandbox_kind().is_none() { return; }
+    if !sandboxed() { return; }
     let root = scratch("cwd");
     let v = sh(ShellPolicy::new(&root), "try { await sh({ command: 'pwd', cwd: '../..' }) } catch (e) { e.code }").await;
     assert_eq!(v, Value::from("EACCES"));
@@ -74,7 +87,7 @@ async fn cwd_cannot_escape_the_workspace() {
 
 #[tokio::test]
 async fn network_is_blocked_by_default() {
-    if sandbox_kind().is_none() { return; }
+    if !sandboxed() { return; }
     let root = scratch("net");
     let v = sh(ShellPolicy::new(&root), "(await sh('curl -sS -m 3 -o /dev/null https://example.com; echo $?')).stdout.trim()").await;
     assert_ne!(v, Value::from("0"), "network request should fail inside the sandbox");
@@ -82,7 +95,7 @@ async fn network_is_blocked_by_default() {
 
 #[tokio::test]
 async fn timeouts_kill_the_process_group() {
-    if sandbox_kind().is_none() { return; }
+    if !sandboxed() { return; }
     let root = scratch("timeout");
     let mut policy = ShellPolicy::new(&root);
     policy.timeout = Duration::from_millis(300);

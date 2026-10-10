@@ -95,6 +95,30 @@ cargo build --release -p modebox-cli
 
 Shell commands suspend for approval unless they start with an `allow` entry (word for word), use plain arguments only (no quotes, `$`, `&`, `|`, `;`, redirects, globs or braces), and avoid write/exec flags such as `find -delete` or `rg --pre`.
 
+#### Linux
+
+`sh()` needs bubblewrap and unprivileged user namespaces. modebox checks both on first use. If either is missing, `modebox sh` and `sh()` fail with the reason instead of running anything unconfined.
+
+```bash
+sudo apt-get install bubblewrap        # or dnf / pacman / apk
+```
+
+Ubuntu 23.10 and later block unprivileged user namespaces through AppArmor. Give bwrap a profile that allows them:
+
+```bash
+sudo tee /etc/apparmor.d/bwrap <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+}
+EOF
+sudo apparmor_parser -r /etc/apparmor.d/bwrap
+```
+
+This is the narrow fix, but it still lets any local user run bwrap with user namespaces. The broad one is `sysctl kernel.apparmor_restrict_unprivileged_userns=0`. Inside Docker, user namespaces are usually off unless the container runs with a seccomp profile that allows them.
+
 ### Rust
 
 ```rust
@@ -184,7 +208,7 @@ How approvals reach the user, per client capability (all three are exercised by 
 
 - **CPU-heavy JS:** QuickJS is an interpreter, so heavy computation is much slower than on V8. Next: an opt-in V8-isolate tier in a separate sandboxed process.
 - **Missing web APIs:** `Intl` and `URL` aren't available yet.
-- **Linux shell sandbox:** the bubblewrap path is implemented but was only tested on macOS here. Windows has no shell sandbox.
+- **Shell sandbox platforms:** Seatbelt on macOS and bubblewrap on Linux. CI runs both on every change. Windows has no shell sandbox, and Linux has no seccomp filter yet.
 - **Node binding:** built for darwin-arm64 only. Prebuilds per platform via `@napi-rs/cli` are TODO.
 - **Single-use tokens across processes:** tracking is in memory. A `ContinuationStore` trait is next.
 - **Python:** a Monty or CPython-wasi guest would reuse the same snapshot and resume machinery.
