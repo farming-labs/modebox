@@ -1,0 +1,13 @@
+{
+  "name": "modebox",
+  "version": "0.1.0",
+  "description": "Run agent-written JavaScript/TypeScript in a snapshot-able WebAssembly sandbox (Rust + wasmtime + QuickJS)",
+  "type": "module",
+  "main": "index.mjs",
+  "types": "index.d.ts",
+  "exports": { ".": { "types": "./index.d.ts", "default": "./index.mjs" } },
+  "files": ["index.mjs", "index.d.ts", "modebox.node"],
+  "engines": { "node": ">=18" },
+  "license": "Apache-2.0",
+  "scripts": { "test": "node --test test/*.test.mjs" }
+}
