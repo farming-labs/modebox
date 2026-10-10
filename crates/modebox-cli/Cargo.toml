@@ -1,0 +1,22 @@
+[package]
+name = "modebox-cli"
+description = "modebox command line: run sandboxed code, sandboxed shell, and an MCP code-mode server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "modebox"
+path = "src/main.rs"
+
+[dependencies]
+modebox-core = { workspace = true, features = ["cloud"] }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+futures.workspace = true
+clap = { version = "4", features = ["derive"] }
+schemars = "1"
+rmcp = { version = "3", features = ["server", "client", "macros", "transport-io", "transport-child-process", "elicitation", "schemars"] }
