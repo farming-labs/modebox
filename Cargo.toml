@@ -7,7 +7,7 @@ exclude = ["guest"]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.92"
-license = "Apache-2.0"
+license = "MIT"
 
 [workspace.dependencies]
 modebox-core = { path = "crates/modebox-core" }

@@ -203,3 +203,7 @@ cargo test --release --workspace                  # 60 Rust tests
 node tests/fixtures/drive-mcp.mjs legacy|elicit|mrtr
 node bench/compare.mjs run && node bench/compare.mjs modebox
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
