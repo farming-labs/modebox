@@ -8,7 +8,7 @@ license.workspace = true
 
 [features]
 default = ["typescript", "object-store"]
-typescript = ["dep:swc_ts_fast_strip", "dep:swc_common"]
+typescript = ["dep:swc_ts_fast_strip", "dep:swc_common", "dep:swc_ecma_parser", "dep:swc_ecma_ast"]
 # Adapter for any `object_store` backend (memory/local built in).
 object-store = ["dep:object_store", "dep:url"]
 # S3 (+ R2, MinIO…), GCS, Azure and HTTP drivers.
@@ -39,6 +39,8 @@ wasmtime-wizer.workspace = true
 zstd.workspace = true
 swc_ts_fast_strip = { version = "59", optional = true }
 swc_common = { version = "26", optional = true }
+swc_ecma_parser = { version = "46", optional = true }
+swc_ecma_ast = { version = "29", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

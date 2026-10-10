@@ -69,3 +69,28 @@ async fn suspended_cells_resume_into_the_session() {
     assert_eq!(ok(&r), Value::from("dropped"));
     assert_eq!(ok(&s.run("[before, res]").await).to_json(), serde_json::json!(["kept", "dropped"]));
 }
+
+#[tokio::test]
+async fn cells_can_redeclare_top_level_bindings() {
+    let mut s = engine().session(tools(), RunOptions::default());
+    assert_eq!(ok(&s.run("const users = await db.users(); users.length").await), Value::from(3));
+    // The same cell again, tweaked: a model iterating on its code.
+    assert_eq!(ok(&s.run("const users = (await db.users()).slice(0, 1); users.length").await), Value::from(1));
+    ok(&s.run("let n = 1").await);
+    assert_eq!(ok(&s.run("let n = 2; n").await), Value::from(2));
+    assert_eq!(ok(&s.run("const { a, b } = { a: 1, b: 2 }; a + b").await), Value::from(3));
+    assert_eq!(ok(&s.run("const { a, b } = { a: 10, b: 20 }; a + b").await), Value::from(30));
+    // Strings and block scopes are untouched.
+    assert_eq!(ok(&s.run("const text = 'const x = 1'; text").await), Value::from("const x = 1"));
+    assert_eq!(ok(&s.run("{ const inner = 1 } typeof inner").await), Value::from("undefined"));
+    // Error positions still point at what was written.
+    let r = s.run("const z = 1;\nconst q = z.nope.deeper;").await;
+    let e = r.error().expect("TypeError");
+    assert!(e.stack.as_deref().unwrap_or("").contains(":2:"), "{:?}", e.stack);
+}
+
+#[tokio::test]
+async fn one_shot_runs_keep_const_semantics() {
+    let r = engine().run("const a = 1; a = 2", &tools(), RunOptions::default()).await;
+    assert_eq!(r.error().map(|e| e.name.as_str()), Some("TypeError"));
+}
