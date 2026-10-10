@@ -1,0 +1,5 @@
+# Add to ~/.codex/config.toml
+[mcp_servers.modebox]
+command = "modebox"
+args = ["mcp", "-c", "/absolute/path/to/modebox.json"]
+tool_timeout_sec = 300

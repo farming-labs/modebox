@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "modebox": {
+      "command": "modebox",
+      "args": ["mcp", "-c", "modebox.json"]
+    }
+  }
+}
