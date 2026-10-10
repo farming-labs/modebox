@@ -202,12 +202,12 @@ tests/fixtures         notes-mcp.mjs (downstream MCP server), drive-mcp.mjs (har
 ```
 
 ```bash
-cargo test --workspace
+cargo test --release --workspace                  # release: some tests assert timings
 cargo clippy --workspace --all-targets -- -D warnings
-cargo build -p modebox-cli -p modebox-node
-cp target/debug/libmodebox_node.dylib packages/modebox/modebox.node   # .so on Linux
+cargo build --release -p modebox-cli -p modebox-node
+cp target/release/libmodebox_node.dylib packages/modebox/modebox.node   # .so on Linux
 (cd packages/modebox && npm test)
-MODEBOX_BIN=target/debug/modebox node tests/fixtures/drive-mcp.mjs legacy|elicit|mrtr
+node tests/fixtures/drive-mcp.mjs legacy|elicit|mrtr
 node bench/compare.mjs run && node bench/compare.mjs modebox
 ```
 
