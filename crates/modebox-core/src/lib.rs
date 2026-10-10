@@ -31,6 +31,7 @@
 mod dts;
 mod engine;
 mod run;
+mod session;
 mod snapshot;
 mod tools;
 mod ts;
@@ -42,5 +43,6 @@ pub use run::{
     ClockMode, ErrorKind, Event, EventSink, Interrupt, Limits, LogEntry, Mode, Outcome, Resolution, RunError,
     RunOptions, RunResult, Stats, Suspension,
 };
+pub use session::Session;
 pub use tools::{Approval, ApprovalFn, Call, Extension, Handler, Tool, ToolError, ToolResult, Toolbox};
 pub use value::{ErrorValue, Value};
