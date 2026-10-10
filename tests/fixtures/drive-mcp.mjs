@@ -1,12 +1,19 @@
 // Drive `modebox mcp` like an agent harness would, through each approval path:
 //   node tests/fixtures/drive-mcp.mjs legacy|elicit|mrtr
+// Exits non-zero if any step gives the wrong answer, so CI can run it.
 import { spawn } from 'node:child_process';
 
 const mode = process.argv[2] ?? 'legacy';
 const bin = process.env.MODEBOX_BIN ?? './target/release/modebox';
 const proc = spawn(bin, ['-c', 'modebox.example.json', 'mcp'], { stdio: ['pipe', 'pipe', 'inherit'] });
 const waiters = new Map();
-let buf = '', nextId = 0;
+let buf = '', nextId = 0, prompts = 0, done = false;
+const failures = [];
+const expect = (ok, what) => { if (!ok) { failures.push(what); console.log(`  FAIL: ${what}`); } };
+const bail = (why) => { console.error(`drive-mcp: ${why}`); proc.kill(); process.exit(1); };
+proc.on('error', (e) => bail(`could not start ${bin}: ${e.message}`));
+proc.on('exit', (code) => { if (!done) bail(`modebox exited early (${code})`); });
+setTimeout(() => bail('timed out'), 120_000).unref();
 const send = (m) => proc.stdin.write(JSON.stringify(m) + '\n');
 proc.stdout.on('data', (d) => {
   buf += d;
@@ -16,6 +23,7 @@ proc.stdout.on('data', (d) => {
     const msg = JSON.parse(line);
     if (msg.method && msg.id !== undefined) { // server -> client request
       if (msg.method === 'elicitation/create') {
+        prompts++;
         console.log(`  [user prompt] ${msg.params.message}\n  [user] approve`);
         send({ jsonrpc: '2.0', id: msg.id, result: { action: 'accept', content: { approve: true } } });
       } else send({ jsonrpc: '2.0', id: msg.id, result: {} });
@@ -46,30 +54,47 @@ if (mode !== 'mrtr') {
   send({ jsonrpc: '2.0', method: 'notifications/initialized' });
 }
 const list = await request('tools/list', mode === 'mrtr' ? { _meta: meta2026 } : {});
-console.log('tools:', list.result.tools.map((t) => t.name).join(', '));
+const names = list.result.tools.map((t) => t.name);
+console.log('tools:', names.join(', '));
+expect(['execute', 'types'].every((n) => names.includes(n)), 'tools/list has execute and types');
 
 console.log('\n> execute (read-only)');
-console.log(text(await call('execute', { code: SUMMARIZE })));
+const summary = text(await call('execute', { code: SUMMARIZE }));
+console.log(summary);
+expect(summary.includes('"STANDUP"') && summary.includes('"DEPLOY CHECKLIST"'), 'read-only run returns both work notes');
+expect(summary.includes('found 2 work notes'), 'read-only run returns console output');
 
 console.log('\n> execute (needs approval)');
 let res = await call('execute', { code: DELETE });
 if (mode === 'legacy') {
   console.log(text(res));
-  const id = text(res).match(/"id": "([^"]+)"/)[1];
+  const id = text(res).match(/"id": "([^"]+)"/)?.[1];
+  if (!id) bail('no approval id in the paused result');
   console.log('\n> approve', id);
   res = await call('approve', { id, approve: true });
 }
 if (mode === 'mrtr') {
   const r = res.result;
+  expect(r?.resultType === 'input_required' && !!r.requestState, 'MRTR run asks for input with requestState');
+  if (!r?.inputRequests) bail('no inputRequests in the MRTR result');
   console.log('  resultType:', r.resultType, '| requests:', Object.keys(r.inputRequests ?? {}).join(','), '| requestState bytes:', r.requestState?.length);
-  for (const [k, req] of Object.entries(r.inputRequests ?? {})) console.log(`  [user prompt] ${req.params.message}\n  [user] approve`);
+  for (const req of Object.values(r.inputRequests)) prompts++, console.log(`  [user prompt] ${req.params.message}\n  [user] approve`);
   const inputResponses = Object.fromEntries(Object.keys(r.inputRequests).map((k) => [k, { action: 'accept', content: { approve: true } }]));
   console.log('\n> retry with inputResponses + requestState (server kept no state)');
   res = await call('execute', { code: DELETE }, { inputResponses, requestState: r.requestState });
 }
-console.log(text(res));
+const deleted = text(res);
+console.log(deleted);
+expect(prompts === (mode === 'legacy' ? 0 : 1), `the user was asked ${mode === 'legacy' ? 'through the approve tool' : 'once'}`);
+expect(deleted.includes('"deleted": 2') && !deleted.includes('"standup"'), 'approved delete removes the standup note');
 
 console.log('\n> execute (uses state from earlier calls)');
-console.log(text(await call('execute', { code: `({ earlier: work.length, deleted: typeof target === 'object' ? target.title : null })` })));
+const state = text(await call('execute', { code: `({ earlier: work.length, deleted: typeof target === 'object' ? target.title : null })` }));
+console.log(state);
+expect(state.includes('"earlier": 2') && state.includes('"deleted": "standup"'), 'later calls see earlier variables');
+
+done = true;
 proc.kill();
+if (failures.length) { console.error(`\ndrive-mcp ${mode}: ${failures.length} check(s) failed`); process.exit(1); }
+console.log(`\ndrive-mcp ${mode}: ok`);
 process.exit(0);
