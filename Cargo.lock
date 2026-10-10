@@ -1795,6 +1795,7 @@ dependencies = [
  "clap",
  "futures",
  "modebox-core",
+ "rand 0.9.5",
  "rmcp",
  "schemars",
  "serde",
