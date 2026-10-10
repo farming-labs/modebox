@@ -6,11 +6,10 @@
 //! copy-on-write memory this is microseconds, not the milliseconds it takes to
 //! boot a JS engine.
 
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result, anyhow};
@@ -19,6 +18,7 @@ use wasmtime::{
     Store, StoreLimits, StoreLimitsBuilder, TypedFunc,
 };
 
+use crate::continuations::{ContinuationStore, MemoryContinuations};
 use crate::snapshot::{MemDiff, Sealer};
 
 static GUEST_WASM: &[u8] = include_bytes!("../guest/modebox_guest.wasm");
@@ -53,6 +53,10 @@ pub struct EngineConfig {
     pub continuation_ttl: Duration,
     /// Reject a continuation token that was already resumed once.
     pub single_use_continuations: bool,
+    /// Where used tokens are recorded. The default is in memory, which only
+    /// covers this process; share a [`StoreContinuations`](crate::StoreContinuations)
+    /// between processes that resume each other's tokens.
+    pub continuations: Arc<dyn ContinuationStore>,
 }
 
 impl Default for EngineConfig {
@@ -66,6 +70,7 @@ impl Default for EngineConfig {
             secret: std::env::var("MODEBOX_SECRET").ok().map(String::into_bytes),
             continuation_ttl: Duration::from_secs(24 * 3600),
             single_use_continuations: true,
+            continuations: Arc::new(MemoryContinuations::default()),
         }
     }
 }
@@ -93,8 +98,6 @@ pub(crate) struct EngineInner {
     pub image_id: String,
     pub config: EngineConfig,
     pub sealer: Sealer,
-    /// Consumed continuation nonces -> expiry (ms), for single-use tokens.
-    pub consumed: Mutex<HashMap<String, u64>>,
     stop_ticker: Arc<AtomicBool>,
     pub startup: Duration,
 }
@@ -175,7 +178,6 @@ impl Engine {
                 base,
                 image_id,
                 sealer: Sealer::new(&secret),
-                consumed: Mutex::new(HashMap::new()),
                 stop_ticker,
                 startup: t0.elapsed(),
                 config,

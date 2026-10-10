@@ -68,6 +68,21 @@ test('approval policies pause before the host function runs', async () => {
   assert.deepEqual(sent, [5]);
 });
 
+test('a shared continuationsDir makes tokens single-use across runners', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'modebox-used-'));
+  // Two runners with the same key and directory stand in for two processes.
+  const [a, b] = [0, 1].map(() => createRunner({ continuationSecret: 'k'.repeat(32), continuationsDir: dir }));
+  const hostFunctions = { bank: { send: requireApproval(() => 'ok') } };
+  const s = await a.run({ source: 'await bank.send(1)', hostFunctions });
+  const resolutions = [{ interruptionId: s.interruptions[0].id, value: true }];
+  assert.equal((await b.run({ hostFunctions, continuation: s.continuation, resolutions })).value, 'ok');
+  await assert.rejects(a.run({ hostFunctions, continuation: s.continuation, resolutions }), (e) => e.kind === 'InvalidContinuation');
+  rmSync(dir, { recursive: true });
+});
+
 test('declarations for prompts', () => {
   const runner = createRunner();
   const d = runner.declarations({ gh: { issues: { list: () => [] } } }, { 'gh.issues.list': { description: 'List issues', inputSchema: { type: 'object', properties: { repo: { type: 'string' } }, required: ['repo'] } } });

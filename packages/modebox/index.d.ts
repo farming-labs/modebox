@@ -72,7 +72,16 @@ export interface HostFunctionContext {
 export declare function getHostFunctionContext(): HostFunctionContext;
 export declare function requireApproval<F extends HostFunction>(fn: F): F;
 
-export interface RunnerConfig { continuationSecret?: string; metering?: boolean; cacheDir?: string; continuationTtlMs?: number; limits?: Limits; approve?: string[] }
+export interface RunnerConfig {
+  continuationSecret?: string;
+  metering?: boolean;
+  cacheDir?: string;
+  continuationTtlMs?: number;
+  /** Directory recording used continuations. Share it between processes that resume the same tokens; default is in memory (this process only). */
+  continuationsDir?: string;
+  limits?: Limits;
+  approve?: string[];
+}
 export declare class Runner {
   constructor(config?: RunnerConfig);
   run(options: RunOptions): Promise<RunResult>;

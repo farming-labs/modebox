@@ -444,6 +444,32 @@ async fn continuations_are_single_use_and_tamper_proof() {
 }
 
 #[tokio::test]
+async fn a_shared_store_makes_tokens_single_use_across_engines() {
+    // Two engines with the same key stand in for two processes.
+    let used = Arc::new(StoreContinuations::new(Arc::new(store::memory::MemoryStore::new())).unwrap());
+    let make = |continuations: Arc<dyn ContinuationStore>| {
+        let cfg = EngineConfig { secret: Some(b"shared-secret-for-two-engines-0123".to_vec()), continuations, ..Default::default() };
+        Engine::with_config(cfg).unwrap()
+    };
+    let (a, b) = (make(used.clone()), make(used));
+    let tools = bank(Arc::new(AtomicU32::new(0)));
+    let first = a.run("await bank.transfer({ amount: 1 })", &tools, opts()).await;
+    let s = first.suspension().unwrap().clone();
+    let id = s.interrupts[0].id;
+
+    ok(&b.resume(&s.continuation, [(id, Resolution::Approve)], &tools, opts()).await);
+    let again = a.resume(&s.continuation, [(id, Resolution::Approve)], &tools, opts()).await;
+    assert_eq!(err(&again).kind, ErrorKind::InvalidContinuation);
+    assert!(err(&again).message.contains("already used"), "{}", err(&again).message);
+
+    // Without a shared store each engine only knows its own resumes.
+    let (c, d) = (make(Arc::new(MemoryContinuations::default())), make(Arc::new(MemoryContinuations::default())));
+    let s = c.run("await bank.transfer({ amount: 1 })", &tools, opts()).await.suspension().unwrap().clone();
+    ok(&c.resume(&s.continuation, [(id, Resolution::Approve)], &tools, opts()).await);
+    ok(&d.resume(&s.continuation, [(id, Resolution::Approve)], &tools, opts()).await);
+}
+
+#[tokio::test]
 async fn resume_requires_the_same_tools() {
     let tools = bank(Arc::new(AtomicU32::new(0)));
     let first = engine().run("await bank.transfer({ amount: 1 })", &tools, opts()).await;

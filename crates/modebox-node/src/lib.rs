@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use modebox_core::{
-    Approval, Call, ClockMode, Engine, EngineConfig, Limits, Outcome, Resolution, RunOptions, RunResult, Tool,
-    ToolError, Toolbox, Value,
+    Approval, Call, ClockMode, Engine, EngineConfig, Limits, Outcome, Resolution, RunOptions, RunResult,
+    StoreContinuations, Tool, ToolError, Toolbox, Value,
 };
 use napi::bindgen_prelude::Promise;
 use napi::threadsafe_function::ThreadsafeFunction;
@@ -29,7 +29,7 @@ fn err(e: impl std::fmt::Display) -> napi::Error {
     napi::Error::from_reason(e.to_string())
 }
 
-/// Create an engine. `config`: `{ metering?, secret?, cacheDir?, continuationTtlMs?, maxInstances? }`.
+/// Create an engine. `config`: `{ metering?, secret?, cacheDir?, continuationTtlMs?, continuationsDir?, maxInstances? }`.
 #[napi]
 pub fn create_engine(config: String) -> napi::Result<u32> {
     static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
@@ -49,6 +49,9 @@ pub fn create_engine(config: String) -> napi::Result<u32> {
     }
     if let Some(n) = c["maxInstances"].as_u64() {
         cfg.max_instances = n as u32;
+    }
+    if let Some(d) = c["continuationsDir"].as_str() {
+        cfg.continuations = Arc::new(StoreContinuations::local(d).map_err(err)?);
     }
     let engine = Engine::with_config(cfg).map_err(|e| err(format!("{e:#}")))?;
     let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

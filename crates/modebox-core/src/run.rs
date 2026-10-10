@@ -436,10 +436,10 @@ impl Engine {
             return invalid("continuation has expired".into());
         }
         if inner.config.single_use_continuations {
-            let mut used = inner.consumed.lock().unwrap();
-            used.retain(|_, exp| *exp > now_ms);
-            if used.insert(header.nonce.clone(), header.expires_ms).is_some() {
-                return invalid("continuation was already used".into());
+            match inner.config.continuations.claim(&header.nonce, header.expires_ms).await {
+                Ok(true) => {}
+                Ok(false) => return invalid("continuation was already used".into()),
+                Err(m) => return invalid(m),
             }
         }
 
