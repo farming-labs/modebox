@@ -94,11 +94,13 @@ async fn cannot_escape_or_read_secrets() {
     let code = r#"
         const tryGet = async (k) => { try { return await fs.get(k) } catch (e) { return e.code } };
         [await tryGet('../outside/secret.txt'), await tryGet('link/secret.txt'), await tryGet('.env'),
-         await tryGet('/etc/passwd'), await tryGet('.git/config')]
+         await tryGet('/etc/passwd'), await tryGet('.git/config'),
+         // Case variants open the same files on case-insensitive filesystems.
+         await tryGet('.ENV'), await tryGet('.Env'), await tryGet('.GIT/config'), await tryGet('src/../.ENV')]
     "#;
     let r = ok(&run(&t, code).await);
     // '/etc/passwd' is a key relative to the root, i.e. <root>/etc/passwd, which doesn't exist.
-    assert_eq!(r, serde_json::json!(["EACCES", "EACCES", "EACCES", null, "EACCES"]));
+    assert_eq!(r, serde_json::json!(["EACCES", "EACCES", "EACCES", null, "EACCES", "EACCES", "EACCES", "EACCES", "EACCES"]));
 }
 
 #[tokio::test(flavor = "multi_thread")]
