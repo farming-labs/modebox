@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 
 use futures::future::BoxFuture;
-use globset::{Glob, GlobSet, GlobSetBuilder};
+use globset::{Glob, GlobBuilder, GlobSet, GlobSetBuilder};
 
 use crate::store::{self, Bytes, Etag, GetOptions, Key, ListOptions, PutOptions, Precondition, Store, StoreError};
 use crate::tools::{Approval, Call, Tool, ToolError};
@@ -98,7 +98,8 @@ impl Mount {
 #[derive(Clone)]
 pub struct VfsConfig {
     pub mounts: Vec<Mount>,
-    /// Globs (matched against full keys) that can't be read, listed or written.
+    /// Globs (matched against full keys, ignoring case) that can't be read,
+    /// listed or written.
     pub deny: Vec<String>,
     /// Largest object `get` returns whole; use a byte range beyond this.
     pub max_read_bytes: usize,
@@ -217,7 +218,9 @@ impl Vfs {
     pub fn new(cfg: VfsConfig) -> Result<Vfs, String> {
         let mut gs = GlobSetBuilder::new();
         for d in &cfg.deny {
-            gs.add(Glob::new(d).map_err(|e| format!("bad deny glob {d}: {e}"))?);
+            // Case-insensitive: on macOS and Windows `.ENV` opens the same file as `.env`.
+            let glob = GlobBuilder::new(d).case_insensitive(true).build();
+            gs.add(glob.map_err(|e| format!("bad deny glob {d}: {e}"))?);
         }
         let deny = gs.build().map_err(|e| e.to_string())?;
         Ok(Vfs { inner: Arc::new(Inner { cfg, deny, state: Mutex::new(State::default()) }) })
