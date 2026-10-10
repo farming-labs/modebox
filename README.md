@@ -2,7 +2,7 @@
 
 Run untrusted, agent-written JavaScript/TypeScript in a WebAssembly sandbox whose only authority is the functions you hand it, and plug it into any agent harness as **code mode** over MCP.
 
-It's a Rust rewrite and extension of the idea behind Vercel's [Run SDK](https://run-sdk.dev): same model (QuickJS in wasm, host functions as capabilities, interrupt/resume), different engineering underneath, plus the harness-level pieces Run doesn't have.
+When a call needs your approval, the whole VM is snapshotted into an encrypted token. The run can resume minutes or days later, even in another process, and nothing re-runs.
 
 ```
             agent harness (opencode · Claude Code · Codex · AI SDK · your app)
@@ -21,31 +21,33 @@ It's a Rust rewrite and extension of the idea behind Vercel's [Run SDK](https://
  └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## What's different from Run
+## How it compares
 
-| | Vercel Run | modebox |
-|---|---|---|
-| Host runtime | Node worker threads | Rust library; Node binding, CLI, MCP server |
-| Startup per run | fresh QuickJS context (~3.5 ms) | pre-initialized image, instantiated per run (~0.1 ms) |
-| Resume | **replays** the script against a ledger; O(history) | **restores a VM snapshot**; nothing re-executes |
-| Continuation token | signed, **readable**, **reusable** | encrypted + authenticated, single-use, bound to image + tool set |
-| Token size after 200 tool calls | 1.13 MB | 17 KB |
-| Boundary codec | devalue in interpreted JS (~1 MB/s) | Rust walking QuickJS values (1 MB string: 11 ms vs 531 ms) |
-| CPU limits | wall clock + a hidden work cap (#76) | wall clock **and** deterministic fuel, cumulative across resumes |
-| Console | written to the host's stdout | captured, Node-style formatted, streamed as events |
-| Concurrency over the limit | run fails | calls queue |
-| Tool errors seen by the code | redacted to "Host function failed." | real message and `code` |
-| Approvals | the host function must throw an interrupt | declarative policy per tool (`Approval::Always`, globs, predicates), batched |
-| Persistent state between runs | no | sessions: notebook-style VM, savable as a token |
-| Determinism | seeded `Math.random`, `Date` hack | seeded `Math.random` + `crypto`, virtual clock (timers instant), fuel |
-| Web APIs | missing `TextEncoder`, `atob`, timers, `structuredClone` (despite docs) | all present |
-| TypeScript | Node's type stripping | swc strip-only: error line:col match what the model wrote; enums supported |
-| Shell | — | `sh()` in an OS sandbox |
-| Harness integration | AI SDK code mode | MCP server with 3 approval paths, opencode plugin |
+✅ yes · ⚠️ partly · ❌ no · — not applicable
+
+| | **modebox** | Vercel Run | opencode code mode | Codex code mode | Claude Code | Cloudflare Code Mode |
+|---|---|---|---|---|---|---|
+| Status | prototype (v0.1) | released | experimental flag | experimental, off by default | released | released |
+| Agent code runs in | QuickJS on wasm (wasmtime) | QuickJS on wasm (Node workers) | interpreter for a JS subset | V8, separate process | — (no code mode) | V8 isolates |
+| Runs where | any host: Rust, Node, CLI, MCP | Node / Bun | inside opencode | inside Codex | — | Cloudflare Workers |
+| MCP tools as typed functions | ✅ | ⚠️ via AI SDK code mode | ✅ | ✅ | — | ✅ |
+| Shell from agent code | ✅ `sh()` | ❌ | ❌ | ✅ | — | ❌ |
+| Shell commands in an OS sandbox | ✅ Seatbelt / bubblewrap | — | ❌ | ✅ Seatbelt / bubblewrap + seccomp | ✅ Seatbelt / bubblewrap | — |
+| Network control for the shell | on / off | — | ❌ | ✅ per-domain proxy | ✅ per-domain proxy | — |
+| File / storage API for agent code | ✅ local, S3, GCS, Azure, staged writes | ❌ | ❌ | ⚠️ through its shell and file tools | — | ⚠️ through your own bindings |
+| Pause mid-script for approval | ✅ VM snapshot, nothing re-runs | ⚠️ replays the script | ❌ | ⚠️ waits in memory | — | ⚠️ replays the script |
+| Approval survives a restart | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| Pause token | encrypted, single-use | signed but readable, reusable | — | — | — | stored server-side |
+| State kept between runs | ✅ sessions, savable | ❌ | ❌ | ✅ store / load | — | ❌ |
+| Fast CPU-heavy code (JIT) | ❌ interpreter | ❌ interpreter | ❌ interpreter | ✅ V8 | — | ✅ V8 |
+
+Where others are ahead today: V8-based tools (Codex, Cloudflare) run heavy computation much faster, Codex and Claude Code can allow shell network access per domain, and all of them are more mature.
+
+Based on each project's public source and docs as of October 2026. These tools change quickly; corrections are welcome.
 
 ## Benchmarks
 
-Apple M-series, Node 24, same workloads. `bench/compare.mjs` runs the identical script against both packages, with JS host functions on both sides.
+Measured against Vercel Run, the closest package with the same model (QuickJS on wasm with host functions). Apple M-series, Node 24. `bench/compare.mjs` runs the identical script against both packages, with JS host functions on both sides.
 
 | workload | Run 2.1.7 | modebox (Node) | |
 |---|---:|---:|---:|
@@ -178,7 +180,7 @@ How approvals reach the user, per client capability (all three are exercised by 
 
 ## Limitations / roadmap
 
-- **CPU-heavy JS:** same speed as Run. Next: an opt-in V8-isolate tier in a separate sandboxed process.
+- **CPU-heavy JS:** QuickJS is an interpreter, so heavy computation is much slower than on V8. Next: an opt-in V8-isolate tier in a separate sandboxed process.
 - **Missing web APIs:** `Intl` and `URL` aren't available yet.
 - **Linux shell sandbox:** the bubblewrap path is implemented but was only tested on macOS here. Windows has no shell sandbox.
 - **Node binding:** built for darwin-arm64 only. Prebuilds per platform via `@napi-rs/cli` are TODO.
