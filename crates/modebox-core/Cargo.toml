@@ -1,0 +1,32 @@
+[package]
+name = "modebox-core"
+description = "Run untrusted, agent-written JavaScript/TypeScript in a snapshot-able WebAssembly sandbox"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+default = ["typescript"]
+typescript = ["dep:swc_ts_fast_strip", "dep:swc_common"]
+
+[dependencies]
+anyhow.workspace = true
+base64.workspace = true
+blake3.workspace = true
+chacha20poly1305.workspace = true
+futures.workspace = true
+indexmap.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+wasmtime.workspace = true
+wasmtime-wizer.workspace = true
+zstd.workspace = true
+swc_ts_fast_strip = { version = "59", optional = true }
+swc_common = { version = "26", optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
