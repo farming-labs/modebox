@@ -21,7 +21,10 @@ blake3.workspace = true
 bytes = "1"
 chacha20poly1305.workspace = true
 futures.workspace = true
+globset = "0.4"
 ignore = "0.4"
+regex = "1"
+similar = "3"
 object_store = { version = "0.14", default-features = false, features = ["fs"], optional = true }
 url = { version = "2", optional = true }
 indexmap.workspace = true

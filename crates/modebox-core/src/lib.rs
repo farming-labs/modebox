@@ -38,6 +38,7 @@ pub mod store;
 mod tools;
 mod ts;
 mod value;
+pub mod vfs;
 
 pub use dts::declarations;
 pub use engine::{Engine, EngineConfig};
