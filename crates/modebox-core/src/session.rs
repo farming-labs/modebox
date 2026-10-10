@@ -101,7 +101,7 @@ impl Session {
             }
         };
         self.cells += 1;
-        let (mut r, g) = self.engine.run_on(guest, code, &self.tools, self.opts.clone(), t0).await;
+        let (mut r, g) = self.engine.run_on(guest, code, &self.tools, self.opts.clone(), t0, true).await;
         self.adopt(&r, g).await;
         if let Some(note) = fresh_note {
             r.logs.insert(0, LogEntry { level: "warn".into(), message: note.into() });

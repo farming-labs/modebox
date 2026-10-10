@@ -77,6 +77,50 @@ pub(crate) fn strip(code: &str, _filename: &str) -> Result<String, String> {
     Ok(code.to_owned())
 }
 
+/// Make a session cell's top-level `const`/`let` declarations re-declarable,
+/// like Node's REPL: models re-run and tweak code, and a second
+/// `const users = …` in the same session would otherwise throw
+/// "redeclaration of 'users'". They become `var`, padded to the same length
+/// so error line and column numbers don't move. Only top-level declarations
+/// are touched (found with a real parser, so strings, comments and blocks are
+/// safe); code that doesn't parse is returned unchanged.
+#[cfg(feature = "typescript")]
+pub(crate) fn redeclarable(js: &str) -> String {
+    use swc_common::sync::Lrc;
+    use swc_common::{FileName, SourceMap, Spanned};
+    use swc_ecma_ast::{Decl, EsVersion, ModuleItem, Stmt, VarDeclKind};
+    use swc_ecma_parser::{EsSyntax, Parser, StringInput, Syntax, lexer::Lexer};
+
+    let cm: Lrc<SourceMap> = Default::default();
+    let fm = cm.new_source_file(FileName::Anon.into(), js.to_owned());
+    // Parsed as a module so top-level `await` is accepted.
+    let lexer = Lexer::new(Syntax::Es(EsSyntax::default()), EsVersion::latest(), StringInput::from(&*fm), None);
+    let mut parser = Parser::new_from(lexer);
+    let Ok(module) = parser.parse_module() else { return js.to_owned() };
+    if !parser.take_errors().is_empty() {
+        return js.to_owned();
+    }
+    let mut out = js.as_bytes().to_vec();
+    for item in &module.body {
+        let ModuleItem::Stmt(Stmt::Decl(Decl::Var(decl))) = item else { continue };
+        let at = (decl.span().lo.0 - fm.start_pos.0) as usize;
+        let (keyword, replacement): (&[u8], &[u8]) = match decl.kind {
+            VarDeclKind::Const => (b"const", b"var  "),
+            VarDeclKind::Let => (b"let", b"var"),
+            VarDeclKind::Var => continue,
+        };
+        if out.get(at..at + keyword.len()) == Some(keyword) {
+            out[at..at + keyword.len()].copy_from_slice(replacement);
+        }
+    }
+    String::from_utf8(out).unwrap_or_else(|_| js.to_owned())
+}
+
+#[cfg(not(feature = "typescript"))]
+pub(crate) fn redeclarable(js: &str) -> String {
+    js.to_owned()
+}
+
 #[cfg(all(test, feature = "typescript"))]
 mod tests {
     use super::strip;
@@ -102,6 +146,17 @@ mod tests {
     fn syntax_errors_are_reported() {
         let err = strip("const = 1;", "a.ts").unwrap_err();
         assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn redeclarable_rewrites_only_top_level_bindings() {
+        use super::redeclarable;
+        let src = "const a = 1; let b = await f();\nif (x) { const inner = 2 }\nconst s = 'const kept';\nfor (let i = 0; i < 2; i++) {}";
+        let out = redeclarable(src);
+        assert_eq!(out, "var   a = 1; var b = await f();\nif (x) { const inner = 2 }\nvar   s = 'const kept';\nfor (let i = 0; i < 2; i++) {}");
+        assert_eq!(out.len(), src.len(), "byte offsets must not move");
+        // Not valid as a module (top-level return): left alone.
+        assert_eq!(redeclarable("const a = 1; return a"), "const a = 1; return a");
     }
 
     #[test]

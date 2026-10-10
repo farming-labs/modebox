@@ -344,10 +344,11 @@ impl Engine {
             Ok(g) => g,
             Err(e) => return fail(RunError::new(ErrorKind::Internal, "ModeboxError", format!("{e:#}"))),
         };
-        self.run_on(guest, code, tools, opts, t0).await.0
+        self.run_on(guest, code, tools, opts, t0, false).await.0
     }
 
     /// Evaluate `code` in an existing instance (fresh, or a session's).
+    /// `repl`: make top-level `const`/`let` re-declarable (session cells).
     pub(crate) async fn run_on(
         &self,
         guest: Guest,
@@ -355,8 +356,9 @@ impl Engine {
         tools: &Toolbox,
         opts: RunOptions,
         t0: Instant,
+        repl: bool,
     ) -> (RunResult, Option<Guest>) {
-        let js = if opts.typescript {
+        let mut js = if opts.typescript {
             match crate::ts::strip(code, &opts.filename) {
                 Ok(js) => js,
                 Err(msg) => return (fail(RunError::new(ErrorKind::Syntax, "SyntaxError", msg)), Some(guest)),
@@ -364,6 +366,9 @@ impl Engine {
         } else {
             code.to_owned()
         };
+        if repl && opts.mode != Mode::Function {
+            js = crate::ts::redeclarable(&js);
+        }
         let instantiate = t0.elapsed();
         let seed = opts.seed.unwrap_or_else(rand::random);
         let request = json!({
