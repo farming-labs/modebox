@@ -1176,6 +1176,7 @@ dependencies = [
  "chacha20poly1305",
  "futures",
  "indexmap",
+ "libc",
  "rand 0.9.5",
  "serde",
  "serde_json",

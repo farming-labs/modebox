@@ -32,6 +32,7 @@ mod dts;
 mod engine;
 mod run;
 mod session;
+pub mod shell;
 mod snapshot;
 mod tools;
 mod ts;
