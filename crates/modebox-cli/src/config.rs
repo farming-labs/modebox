@@ -69,7 +69,7 @@ fn yes() -> bool {
 fn default_allow() -> Vec<String> {
     [
         "ls", "cat", "head", "tail", "wc", "pwd", "echo", "grep", "rg", "find", "file", "stat", "du", "tree", "sort",
-        "uniq", "cut", "jq", "diff", "git status", "git diff", "git log", "git show", "git branch",
+        "cut", "jq", "diff", "git status", "git diff", "git log", "git show", "git branch",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -224,21 +224,62 @@ pub fn glob_match(pattern: &str, text: &str) -> bool {
     true
 }
 
-/// Is `command` covered by an allow entry (whole-word prefix match)?
-/// Commands chaining with `;`, `&&`, `|`, backticks or `$(` are never
-/// auto-allowed: each piece could be anything.
+/// Is `command` covered by an allow entry, so it may run without approval?
+///
+/// Auto-approval is deliberately strict, because `sh -c` would otherwise run
+/// something other than what was checked:
+///
+/// - The command must be plain: letters, digits, spaces and `-_./=:,+@%^~`.
+///   Quotes, `$`, backticks, `&`, `|`, `;`, redirects, globs, braces and
+///   backslashes all need approval, since each can hide or add commands and
+///   flags (`ls & rm -rf src`, `find .${IFS}-delete`, `find . '-delete'`).
+/// - It must start with an allow entry, word for word (`git status` allows
+///   `git status -s`, not `git statusx`).
+/// - Allowed commands lose their write and exec flags (`find -delete`,
+///   `rg --pre`, `sort -o`, `git branch -D`, …).
 pub fn command_allowed(allow: &[String], command: &str) -> bool {
     if allow.iter().any(|a| a == "*") {
         return true;
     }
     let cmd = command.trim();
-    if ["&&", "||", ";", "|", "`", "$(", ">", "<", "\n"].iter().any(|op| cmd.contains(op)) {
+    let plain = cmd.chars().all(|c| c.is_ascii_alphanumeric() || " \t-_./=:,+@%^~".contains(c));
+    if cmd.is_empty() || !plain {
         return false;
     }
     let words: Vec<&str> = cmd.split_whitespace().collect();
-    allow.iter().any(|a| {
+    let prefixed = allow.iter().any(|a| {
         let aw: Vec<&str> = a.split_whitespace().collect();
         !aw.is_empty() && words.len() >= aw.len() && words[..aw.len()] == aw[..]
+    });
+    prefixed && !writes_or_execs(&words)
+}
+
+/// Flags that turn an otherwise read-only command into one that writes files
+/// or runs other programs.
+fn writes_or_execs(words: &[&str]) -> bool {
+    let blocked: &[&str] = match words[0] {
+        "find" => &["-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls"],
+        "rg" => &["--pre", "--pre-glob"],
+        "sort" => &["-o", "--output"],
+        "tree" => &["-o"],
+        "file" => &["-C", "--compile"],
+        "git" => &["--output", "--ext-diff"],
+        _ => &[],
+    };
+    // `git branch` only lists; arguments could create, rename or delete branches.
+    if words.len() > 1 && words[0] == "git" && words[1] == "branch" {
+        let listing = ["-a", "--all", "-r", "--remotes", "-v", "-vv", "--verbose", "--list", "--show-current", "--no-color"];
+        if words[2..].iter().any(|w| !listing.contains(w)) {
+            return true;
+        }
+    }
+    words[1..].iter().any(|w| {
+        blocked.iter().any(|flag| {
+            *w == *flag
+                || w.starts_with(&format!("{flag}="))
+                // Short flags can be clustered: `sort -uo out`.
+                || (flag.len() == 2 && w.starts_with('-') && !w.starts_with("--") && w[1..].contains(&flag[1..]))
+        })
     })
 }
 
@@ -257,12 +298,29 @@ mod tests {
     #[test]
     fn command_allowlist() {
         let allow = default_allow();
-        assert!(command_allowed(&allow, "git status -s"));
-        assert!(command_allowed(&allow, "ls -la src"));
-        assert!(!command_allowed(&allow, "git push"));
-        assert!(!command_allowed(&allow, "ls; rm -rf ~"));
-        assert!(!command_allowed(&allow, "cat $(echo /etc/passwd)"));
-        assert!(!command_allowed(&allow, "echo hi > file"));
+        for ok in [
+            "git status -s", "ls -la src", "cat README.md", "rg -n TODO src", "find src -name main.rs", "sort data.txt",
+            "tree -L 2", "git branch", "git branch -a", "git log --oneline -5", "git diff HEAD~1", "head -n 20 ~/notes.txt",
+        ] {
+            assert!(command_allowed(&allow, ok), "{ok} should be auto-allowed");
+        }
+        for bad in [
+            // not on the list
+            "git push", "rm -rf src", "uniq in.txt out.txt",
+            // chaining, substitution, redirects
+            "ls; rm -rf ~", "ls & rm -rf src", "ls && rm x", "ls | sh", "cat $(echo /etc/passwd)", "ls `rm x`",
+            "echo hi > file", "ls\nrm -rf src",
+            // hiding flags from the check
+            "find .${IFS}-delete", "find . '-delete'", "find . \"-delete\"", "find . -dele\\te", "find . -{delete,}",
+            "cat *.env",
+            // write / exec flags on allowed commands
+            "find . -delete", "find . -name x -exec rm {} +", "find . -execdir sh -c x", "find . -fprint out",
+            "rg --pre=sh foo", "rg --pre sh foo", "sort -o out in", "sort -uo out in", "sort --output=out in",
+            "tree -o out", "file -C -m magic", "git diff --output=x", "git log --ext-diff",
+            "git branch -D main", "git branch evil", "git branch -m main old",
+        ] {
+            assert!(!command_allowed(&allow, bad), "{bad} must need approval");
+        }
         assert!(command_allowed(&["*".into()], "anything && everything"));
     }
 }
