@@ -1,0 +1,5 @@
+# Pinned so the committed wasm can be rebuilt byte for byte (see scripts/build-guest.sh).
+[toolchain]
+channel = "1.92.0"
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"
