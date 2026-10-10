@@ -83,6 +83,7 @@ The Rust trait is in `crates/modebox-core/src/store/mod.rs`; the summary:
 | `InvalidKey` | `EINVAL` |
 | `TooLarge` | `EFBIG` |
 | `Unsupported` | `ENOTSUP` |
+| `QuotaExceeded` | `ENOSPC` |
 | `Transient` (worth retrying) | `EAGAIN` |
 | `Other` | `EIO` |
 
@@ -125,6 +126,7 @@ A `Vfs` maps key prefixes to stores. The longest prefix wins, so `tmp/` shadows 
 - `fs.changes()` diffs them against the store's current content.
 - `fs.commit()` writes each change with a precondition built from what was recorded: `IfMatch(etag)` if the key existed, `IfNotExists` if it didn't. A failed precondition becomes a **conflict**, never an overwrite.
 - By default, commit requires approval. The approval prompt lists `A`/`M`/`D` per key.
+- Uncommitted changes are capped at 64 MiB (`max_staged_bytes`). Past that, `fs.put` fails with `ENOSPC` until the code commits or discards. Overwritten and discarded versions are freed right away. The in-memory `tmp/` scratch mount is capped at 64 MiB too.
 
 **State travels:**
 - Staged writes and the recorded versions are sealed into continuation tokens (encrypted) and saved sessions.

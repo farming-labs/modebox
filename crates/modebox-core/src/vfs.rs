@@ -76,9 +76,10 @@ impl Mount {
         Ok(Mount::new(prefix, Arc::new(s), mode))
     }
 
-    /// In-memory scratch space; writes are direct and vanish with the process.
+    /// In-memory scratch space (64 MiB); writes are direct and vanish with the process.
     pub fn memory(prefix: impl Into<String>) -> Mount {
-        Mount::new(prefix, Arc::new(store::memory::MemoryStore::new()), MountMode::Direct)
+        let store = store::memory::MemoryStore::new().with_limit(64 << 20);
+        Mount::new(prefix, Arc::new(store), MountMode::Direct)
     }
 
     /// Any `object_store` URL: `s3://bucket/prefix`, `gs://…`, `az://…`, `https://…`, `file://…`, `memory://`.
@@ -106,6 +107,8 @@ pub struct VfsConfig {
     pub max_list: usize,
     /// Require approval for `commit` (recommended).
     pub commit_approval: bool,
+    /// Most bytes of uncommitted changes held at once on staged mounts.
+    pub max_staged_bytes: usize,
 }
 
 pub fn default_deny() -> Vec<String> {
@@ -117,7 +120,14 @@ pub fn default_deny() -> Vec<String> {
 
 impl VfsConfig {
     pub fn new(mounts: Vec<Mount>) -> Self {
-        VfsConfig { mounts, deny: default_deny(), max_read_bytes: 8 << 20, max_list: 5000, commit_approval: true }
+        VfsConfig {
+            mounts,
+            deny: default_deny(),
+            max_read_bytes: 8 << 20,
+            max_list: 5000,
+            commit_approval: true,
+            max_staged_bytes: 64 << 20,
+        }
     }
 
     /// A staged workspace at `root` plus in-memory `tmp/` scratch space.
@@ -169,6 +179,28 @@ pub struct Change {
     pub diff: String,
     pub added_lines: usize,
     pub removed_lines: usize,
+}
+
+/// Sum of staged object sizes, optionally leaving one key out (it's being replaced).
+fn staged_bytes(st: &State, except: Option<&str>) -> usize {
+    st.overlay
+        .iter()
+        .filter(|(k, _)| Some(k.as_str()) != except)
+        .map(|(_, l)| match l {
+            Layer::Put { hash, .. } => st.blobs.get(hash).map(|b| b.len()).unwrap_or(0),
+            Layer::Deleted => 0,
+        })
+        .sum()
+}
+
+/// Forget blob versions nothing in the overlay points at any more.
+fn drop_unused_blobs(st: &mut State) {
+    let used: std::collections::HashSet<Hash> = st
+        .overlay
+        .values()
+        .filter_map(|l| if let Layer::Put { hash, .. } = l { Some(*hash) } else { None })
+        .collect();
+    st.blobs.retain(|h, _| used.contains(h));
 }
 
 fn err(msg: impl Into<String>, code: &str) -> ToolError {
@@ -350,18 +382,29 @@ impl Vfs {
                     );
                 }
                 let mut st = self.inner.state.lock().unwrap();
-                match data {
+                let result = match data {
                     Some(bytes) => {
+                        let max = self.cfg().max_staged_bytes;
+                        let others = staged_bytes(&st, Some(key));
+                        if others + bytes.len() > max {
+                            return Err(serr(StoreError::QuotaExceeded(format!(
+                                "staging {key} would hold {} bytes of uncommitted changes, over the {max} byte limit; \
+                                 fs.commit() or fs.discard() first",
+                                others + bytes.len()
+                            ))));
+                        }
                         let h = hash(&bytes);
                         st.blobs.entry(h).or_insert(bytes);
                         st.overlay.insert(key.to_owned(), Layer::Put { hash: h, modified_ms: now_ms() });
-                        Ok(Some(staged_etag(&h)))
+                        Some(staged_etag(&h))
                     }
                     None => {
                         st.overlay.insert(key.to_owned(), Layer::Deleted);
-                        Ok(None)
+                        None
                     }
-                }
+                };
+                drop_unused_blobs(&mut st);
+                Ok(result)
             }
         }
     }
@@ -570,6 +613,7 @@ impl Vfs {
                 st.overlay.remove(&k);
                 st.seen.remove(&k);
             }
+            drop_unused_blobs(&mut st);
         }
         Value::object([("applied", Value::Array(applied)), ("conflicts", Value::Array(conflicts))])
     }
@@ -582,7 +626,18 @@ impl Vfs {
             st.overlay.remove(k);
             st.seen.remove(k);
         }
+        drop_unused_blobs(&mut st);
         keys.len()
+    }
+
+    /// Bytes of uncommitted changes staged right now.
+    pub fn staged_bytes(&self) -> usize {
+        staged_bytes(&self.inner.state.lock().unwrap(), None)
+    }
+
+    /// Bytes of staged content held in memory (each distinct version once).
+    pub fn held_bytes(&self) -> usize {
+        self.inner.state.lock().unwrap().blobs.values().map(|b| b.len()).sum()
     }
 
     fn entry(key: &str, size: u64, modified: Option<f64>, etag: Option<String>, status: Option<&str>) -> Value {

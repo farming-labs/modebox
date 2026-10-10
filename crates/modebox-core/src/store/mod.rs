@@ -203,6 +203,9 @@ pub enum StoreError {
     TooLarge { key: String, size: u64 },
     #[error("not supported: {0}")]
     Unsupported(String),
+    /// A size limit on the store or on staged changes was reached.
+    #[error("quota exceeded: {0}")]
+    QuotaExceeded(String),
     /// Worth retrying (throttling, network).
     #[error("temporary failure: {0}")]
     Transient(String),
@@ -221,6 +224,7 @@ impl StoreError {
             StoreError::InvalidKey(_) => "EINVAL",
             StoreError::TooLarge { .. } => "EFBIG",
             StoreError::Unsupported(_) => "ENOTSUP",
+            StoreError::QuotaExceeded(_) => "ENOSPC",
             StoreError::Transient(_) => "EAGAIN",
             StoreError::Other(_) => "EIO",
         }
