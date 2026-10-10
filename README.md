@@ -91,7 +91,7 @@ cargo build --release -p modebox-cli
 }
 ```
 
-Shell commands that don't match `allow` (whole-word prefix, and never anything with `;`, `&&`, `|`, `$(`, or redirects) suspend for approval.
+Shell commands suspend for approval unless they start with an `allow` entry (word for word), use plain arguments only (no quotes, `$`, `&`, `|`, `;`, redirects, globs or braces), and avoid write/exec flags such as `find -delete` or `rg --pre`.
 
 ### Rust
 
