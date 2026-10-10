@@ -1,0 +1,12 @@
+{
+  "trivial_run_ms": 3.568342041,
+  "one_host_call_ms": 4.129703750000001,
+  "host_calls_200_in_one_run_ms": 25.97020799999973,
+  "parallel8_per_run_ms": 1.4832499579999994,
+  "cpu_sum_10m_ms": 488.2992089999998,
+  "return_1mb_string_ms": 531.3258749999995,
+  "host_returns_5000_rows_ms": 62.03370799999993,
+  "interrupt_resume_pair_ms": 18.504071660000008,
+  "token_bytes_after_200_calls": 1129328,
+  "resume_after_200_calls_ms": 30.928792000000612
+}
