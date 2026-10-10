@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 path = "src/lib.rs"
 
 [dependencies]
-rquickjs = { version = "0.14", default-features = false, features = ["std"] }
+rquickjs = { version = "0.14", default-features = false, features = ["std", "disable-assertions"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 base64 = "0.22"
 rand_chacha = { version = "0.9", default-features = false }
