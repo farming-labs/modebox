@@ -34,6 +34,7 @@ mod run;
 mod session;
 pub mod shell;
 mod snapshot;
+pub mod store;
 mod tools;
 mod ts;
 mod value;
