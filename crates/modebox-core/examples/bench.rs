@@ -1,4 +1,4 @@
-//! Same workloads as bench/run-sdk.mjs (Vercel's `run`), for modebox.
+//! Same workloads as bench/compare.mjs, through the Rust API.
 //! `cargo run --release -p modebox-core --example bench`
 
 use std::sync::Arc;

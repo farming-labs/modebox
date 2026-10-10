@@ -120,7 +120,7 @@ s.run("users.filter(u => u.name.startsWith('a'))").await;
 let token = s.save().await;                      // restore with engine.restore_session(token, ...)
 ```
 
-### Node (Run-compatible)
+### Node
 
 ```js
 import { run, createRunner, getHostFunctionContext, requireApproval } from 'modebox';

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { run, createRunner, getHostFunctionContext, requireApproval, RunError } from '../index.mjs';
 
-test('runs code with host functions (Run-compatible shape)', async () => {
+test('runs code with host functions', async () => {
   const r = await run({ source: 'return await tools.double(21);', hostFunctions: { tools: { double: (x) => x * 2 } } });
   assert.equal(r.status, 'completed');
   assert.equal(r.value, 42);

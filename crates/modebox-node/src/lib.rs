@@ -1,6 +1,6 @@
 //! Node.js bindings. Deliberately small: values cross as tagged JSON
 //! strings, and a single JS `dispatch` callback executes every host call.
-//! The ergonomic API (Run-compatible) lives in `packages/modebox/index.mjs`.
+//! The ergonomic API lives in `packages/modebox/index.mjs`.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};

@@ -11,7 +11,7 @@ export interface Limits {
   maxConcurrency?: number;
   maxValueBytes?: number;
   maxLogBytes?: number;
-  /** Run-compatible aliases. */
+  /** Alternative names for the limits above. */
   maxBridgeRequests?: number;
   maxResultBytes?: number;
   maxHostFunctionOutputBytes?: number;

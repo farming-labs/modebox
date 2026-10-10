@@ -1,9 +1,9 @@
 // modebox for Node.js: run agent-written JS/TS in a WebAssembly sandbox.
 //
-// The API mirrors Vercel's `run` package (run, createRunner,
-// getHostFunctionContext, continuation + resolutions) so it can be swapped
-// in, and adds approvals, captured console output, stats and sessions-free
-// deterministic options.
+// API: run / createRunner to execute code with host functions,
+// getHostFunctionContext().interrupt() to pause a run, continuation +
+// resolutions to resume it, plus approvals, captured console output, stats
+// and deterministic options.
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createRequire } from 'node:module';
