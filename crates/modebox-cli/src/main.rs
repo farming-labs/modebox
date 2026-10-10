@@ -4,6 +4,7 @@
 mod bridge;
 mod config;
 mod mcp;
+mod secret;
 
 use std::io::{IsTerminal, Read, Write};
 use std::path::PathBuf;
@@ -12,7 +13,7 @@ use std::time::Duration;
 
 use modebox_core::shell::{ShellPolicy, sandbox_kind, shell_tool};
 use modebox_core::{
-    Call, ClockMode, Engine, Event, Outcome, Resolution, RunOptions, RunResult, Value, declarations,
+    Call, ClockMode, Engine, EngineConfig, Event, Outcome, Resolution, RunOptions, RunResult, Value, declarations,
 };
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
@@ -105,7 +106,7 @@ async fn real_main() -> Result<()> {
                 (None, Some(p)) => std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?,
                 (None, None) => bail!("give a file, `-` for stdin, or -e CODE"),
             };
-            let engine = Engine::new()?;
+            let engine = engine()?;
             let bridge = bridge::build(&cfg).await?;
             let mut opts = RunOptions { limits: cfg.limits.to_limits(), ..RunOptions::default() };
             if let Some(ms) = timeout_ms {
@@ -141,7 +142,7 @@ async fn real_main() -> Result<()> {
             print_result(&r, json)
         }
         Cmd::Resume { token, approve } => {
-            let engine = Engine::new()?;
+            let engine = engine()?;
             let bridge = bridge::build(&cfg).await?;
             // Resolutions are keyed by interrupt id; we don't know them without
             // the run's output, so apply one decision to ids 1..=max calls.
@@ -152,7 +153,7 @@ async fn real_main() -> Result<()> {
             print_result(&r, true)
         }
         Cmd::Mcp => {
-            let engine = Engine::new()?;
+            let engine = engine()?;
             let bridge = bridge::build(&cfg).await?;
             let has_approvals = !cfg.approve.is_empty() || cfg.shell.enabled;
             let server = mcp::ModeboxServer::new(engine, bridge.tools, cfg.limits.to_limits(), has_approvals);
@@ -185,6 +186,18 @@ async fn real_main() -> Result<()> {
             std::process::exit(code);
         }
     }
+}
+
+/// The CLI's engine. Unless `MODEBOX_SECRET` is set, continuation tokens are
+/// sealed with a key saved on disk, so they still open after a restart.
+fn engine() -> Result<Engine> {
+    let mut cfg = EngineConfig::default();
+    if cfg.secret.is_none()
+        && let Some(path) = secret::default_path()
+    {
+        cfg.secret = Some(secret::load_or_create(&path)?);
+    }
+    Engine::with_config(cfg)
 }
 
 fn ask(question: &str) -> Result<bool> {
