@@ -78,6 +78,9 @@ cargo build --release -p modebox-cli
 ./target/release/modebox run -e 'const xs = [3, 1, 2]; xs.sort()'
 ./target/release/modebox -c modebox.example.json types     # TypeScript API the model sees
 ./target/release/modebox -c modebox.example.json run script.ts   # prompts y/N for approvals
+./target/release/modebox run --json script.ts > paused.json         # or pause, then decide later:
+./target/release/modebox inspect "$(jq -r .continuation paused.json)"           # the pending calls
+./target/release/modebox resume "$(jq -r .continuation paused.json)" --approve-only 3   # approve call 3, deny the rest
 ./target/release/modebox sh -- 'npm test'                  # one command in the OS sandbox
 ./target/release/modebox -c modebox.json mcp               # MCP server (stdio)
 ```
@@ -236,7 +239,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo build --release -p modebox-cli -p modebox-node
 cp target/release/libmodebox_node.dylib packages/modebox/modebox.node   # .so on Linux
 (cd packages/modebox && npm test)
-node tests/fixtures/drive-mcp.mjs legacy|elicit|mrtr
+node tests/fixtures/drive-mcp.mjs legacy|elicit|mrtr|deny
 node bench/compare.mjs run && node bench/compare.mjs modebox
 ```
 

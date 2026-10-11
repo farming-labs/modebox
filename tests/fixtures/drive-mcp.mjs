@@ -107,6 +107,20 @@ if (mode === 'deny') {
   expect(deleted.includes('"deleted": 2') && !deleted.includes('"standup"'), 'approved delete removes the standup note');
 }
 
+if (mode === 'legacy') {
+  console.log('\n> execute (two calls, decided one by one)');
+  const two = text(await call('execute', {
+    code: `const rs = await Promise.allSettled([notes.delete_note({ id: 1 }), notes.delete_note({ id: 3 })]); rs.map(r => r.status)`,
+  }));
+  console.log(two);
+  const pid = two.match(/"id": "([^"]+)"/)?.[1];
+  const calls = [...two.matchAll(/- call (\d+):/g)].map((m) => m[1]);
+  expect(calls.length === 2 && two.includes('"decisions"'), 'both calls are listed with ids and per-call instructions');
+  const decided = text(await call('approve', { id: pid, decisions: { [calls[0]]: true, [calls[1]]: false } }));
+  console.log(decided);
+  expect(decided.includes('"fulfilled"') && decided.includes('"rejected"'), 'each call got its own decision');
+}
+
 console.log('\n> execute (uses state from earlier calls)');
 const state = text(await call('execute', { code: `({ earlier: work.length, deleted: typeof target === 'object' ? target.title : null })` }));
 console.log(state);

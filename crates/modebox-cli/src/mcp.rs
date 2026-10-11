@@ -219,11 +219,20 @@ and use Promise.all for independent calls.\n\
                 continue;
             }
             let id = format!("run-{}", &short_hash(&s.continuation)[..10]);
-            let listing: Vec<String> = s.interrupts.iter().map(|i| format!("- {}", describe(i))).collect();
+            let listing: Vec<String> = s.interrupts.iter().map(|i| format!("- call {}: {}", i.id, describe(i))).collect();
+            let per_call = if s.interrupts.len() > 1 {
+                let example: Vec<String> = s.interrupts.iter().map(|i| format!("\"{}\": true", i.id)).collect();
+                format!(
+                    " To decide on each call, pass {{\"id\": \"{id}\", \"decisions\": {{{}}}}} with false for the ones the user declined.",
+                    example.join(", ")
+                )
+            } else {
+                String::new()
+            };
             let msg = format!(
                 "Paused: this code needs the user's approval before it continues.\n{}\n\n\
 Ask the user. To continue, call the `approve` tool with {{\"id\": \"{id}\", \"approve\": true}} \
-(or false to deny). The sandbox state is saved; nothing before this point will run again.",
+(or false to deny).{per_call} The sandbox state is saved; nothing before this point will run again.",
                 listing.join("\n")
             );
             self.pending.lock().unwrap().insert(id, PendingRun { continuation: s.continuation, interrupts: s.interrupts });
@@ -370,8 +379,16 @@ Use `execute` to batch tool calls and data processing into one step.",
 what they said; never decide on their behalf.",
                     schema(json!({
                         "type": "object",
-                        "properties": { "id": { "type": "string" }, "approve": { "type": "boolean" } },
-                        "required": ["id", "approve"]
+                        "properties": {
+                            "id": { "type": "string", "description": "The paused run's id" },
+                            "approve": { "type": "boolean", "description": "The user's decision for every pending call" },
+                            "decisions": {
+                                "type": "object",
+                                "description": "The user's decision per call id, e.g. {\"3\": true, \"4\": false}; calls left out are denied",
+                                "additionalProperties": { "type": "boolean" }
+                            }
+                        },
+                        "required": ["id"]
                     })),
                 )
                 .annotate(
@@ -438,7 +455,8 @@ what they said; never decide on their behalf.",
             }
             "approve" if self.approve_tool => {
                 let id = args["id"].as_str().unwrap_or("");
-                let approve = args["approve"].as_bool().unwrap_or(false);
+                let all = args["approve"].as_bool().unwrap_or(false);
+                let per_call = args["decisions"].as_object().cloned();
                 let slot = self.replays.slot(&format!("approve:{id}"));
                 let result = slot
                     .get_or_try_init(|| async {
@@ -448,7 +466,13 @@ what they said; never decide on their behalf.",
                         let decisions = p
                             .interrupts
                             .iter()
-                            .map(|i| (i.id, if approve { Resolution::Approve } else { Resolution::Deny("the user declined".into()) }))
+                            .map(|i| {
+                                let ok = match &per_call {
+                                    Some(d) => d.get(&i.id.to_string()).and_then(Json::as_bool) == Some(true),
+                                    None => all,
+                                };
+                                (i.id, if ok { Resolution::Approve } else { Resolution::Deny("the user declined".into()) })
+                            })
                             .collect::<Vec<_>>();
                         let mut session = self.session.lock().await;
                         let r = session.resume(&p.continuation, decisions).await;
