@@ -4,7 +4,8 @@
 //! way to let it. Commands run under Seatbelt (macOS) or bubblewrap (Linux)
 //! with: reads allowed except secret stores, writes only under the workspace
 //! and temp dirs, no network unless enabled, a scrubbed environment, a
-//! timeout that kills the whole process group, and capped output.
+//! timeout that kills the whole process group, and capped output. On Linux a
+//! seccomp filter also refuses syscalls commands never need (see `seccomp`).
 
 #![allow(clippy::result_large_err)] // ToolError carries messages; boxing it buys nothing here.
 
@@ -105,12 +106,19 @@ fn probe() -> Result<Sandbox, String> {
             return Err("macOS sandbox-exec was not found at /usr/bin/sandbox-exec".into());
         }
         // The real base profile: inside another sandbox only trivial profiles apply.
-        try_start(&bin, &["-p", SEATBELT_BASE, "/usr/bin/true"])
+        let mut probe = std::process::Command::new(&bin);
+        probe.args(["-p", SEATBELT_BASE, "/usr/bin/true"]);
+        try_start(&mut probe)
             .map_err(|e| format!("sandbox-exec can't start a sandbox here ({e}); modebox may already be running inside one"))?;
         Ok(Sandbox { kind: Kind::Seatbelt, bin })
     } else if cfg!(target_os = "linux") {
         let bin = which("bwrap").ok_or("bubblewrap (bwrap) is not installed; install the bubblewrap package")?;
-        try_start(&bin, &["--ro-bind", "/", "/", "--unshare-pid", "--unshare-net", "--die-with-parent", "--", "/bin/true"])
+        let mut probe = std::process::Command::new(&bin);
+        probe.args(["--ro-bind", "/", "/", "--unshare-pid", "--unshare-net", "--die-with-parent"]);
+        #[cfg(target_os = "linux")]
+        let _filter = seccomp::attach(&mut probe)?;
+        probe.args(["--", "/bin/true"]);
+        try_start(&mut probe)
             .map_err(|e| {
                 format!(
                     "bubblewrap is installed but can't create a sandbox ({e}). It needs unprivileged user namespaces: \
@@ -124,10 +132,9 @@ fn probe() -> Result<Sandbox, String> {
     }
 }
 
-/// Run a sandbox binary once; Err holds its stderr (or the spawn error) when it fails.
-fn try_start(bin: &Path, args: &[&str]) -> Result<(), String> {
-    let out = std::process::Command::new(bin)
-        .args(args)
+/// Run a sandbox command once; Err holds its stderr (or the spawn error) when it fails.
+fn try_start(cmd: &mut std::process::Command) -> Result<(), String> {
+    let out = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -207,7 +214,8 @@ async fn run_command(policy: &ShellPolicy, call: &Call) -> Result<Value, ToolErr
         .unwrap_or(policy.timeout);
     let stdin = input.get("stdin").and_then(Value::as_str).map(str::to_owned);
 
-    let mut cmd = confine(policy, &root, &cwd, command)?;
+    // `_keep` holds anything the sandbox reads at startup (the seccomp filter).
+    let (mut cmd, _keep) = confine(policy, &root, &cwd, command)?;
     cmd.current_dir(&cwd)
         .env_clear()
         .stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
@@ -290,7 +298,10 @@ fn canon(p: &Path) -> PathBuf {
     p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
 }
 
-fn confine(policy: &ShellPolicy, root: &Path, cwd: &Path, command: &str) -> Result<Command, ToolError> {
+/// What a confined command needs kept open until it has started.
+type Keep = Option<std::io::PipeReader>;
+
+fn confine(policy: &ShellPolicy, root: &Path, cwd: &Path, command: &str) -> Result<(Command, Keep), ToolError> {
     let tmp = canon(&std::env::temp_dir());
     let mut writable = vec![root.to_path_buf(), tmp.clone(), canon(Path::new("/tmp"))];
     writable.extend(policy.writable.iter().map(|p| canon(p)));
@@ -323,7 +334,7 @@ fn confine(policy: &ShellPolicy, root: &Path, cwd: &Path, command: &str) -> Resu
                 cmd.arg("-D").arg(format!("{k}={}", v.display()));
             }
             cmd.arg("/bin/sh").arg("-c").arg(command);
-            Ok(cmd)
+            Ok((cmd, None))
         }
         Ok(Sandbox { kind: Kind::Bubblewrap, bin }) => {
             let mut cmd = Command::new(bin);
@@ -344,13 +355,17 @@ fn confine(policy: &ShellPolicy, root: &Path, cwd: &Path, command: &str) -> Resu
             if !policy.network {
                 cmd.arg("--unshare-net");
             }
+            #[cfg(target_os = "linux")]
+            let keep = seccomp::attach(cmd.as_std_mut()).map_err(|e| ToolError::new(format!("sh: {e}")))?;
+            #[cfg(not(target_os = "linux"))]
+            let keep = None;
             cmd.arg("--chdir").arg(cwd).args(["--", "/bin/sh", "-c", command]);
-            Ok(cmd)
+            Ok((cmd, keep))
         }
         _ if policy.allow_unsandboxed => {
             let mut cmd = Command::new("/bin/sh");
             cmd.arg("-c").arg(command);
-            Ok(cmd)
+            Ok((cmd, None))
         }
         Err(why) => Err(ToolError::new(format!("sh: no OS sandbox is available: {why}")).with_code("ENOSYS")),
     }
@@ -388,3 +403,136 @@ const SEATBELT_NETWORK: &str = r#"(allow network-outbound)
   (global-name "com.apple.SystemConfiguration.configd")
   (global-name "com.apple.dnssd.service"))
 "#;
+
+/// A seccomp filter for bubblewrap. bwrap already drops privileges and
+/// isolates namespaces; this also refuses syscalls that sandboxed commands
+/// never need and that widen the kernel attack surface: namespace and mount
+/// administration, tracing other processes, BPF, io_uring, keyrings, kernel
+/// modules. Modeled on Docker's default profile.
+///
+/// Refused calls fail with ENOSYS, as if the kernel didn't have them. That is
+/// required for `clone3`, whose flags live in memory a filter can't read:
+/// on ENOSYS, libc falls back to `clone`, where new namespaces are refused by
+/// flag.
+#[cfg(target_os = "linux")]
+mod seccomp {
+    use std::collections::BTreeMap;
+    use std::io::Write;
+    use std::os::fd::AsRawFd;
+    use std::os::unix::process::CommandExt;
+    use std::sync::OnceLock;
+
+    use seccompiler::{
+        BpfProgram, SeccompAction, SeccompCmpArgLen, SeccompCmpOp, SeccompCondition, SeccompFilter, SeccompRule,
+        TargetArch,
+    };
+
+    const REFUSED: &[libc::c_long] = &[
+        libc::SYS_ptrace,
+        libc::SYS_process_vm_readv,
+        libc::SYS_process_vm_writev,
+        libc::SYS_mount,
+        libc::SYS_umount2,
+        libc::SYS_pivot_root,
+        libc::SYS_open_tree,
+        libc::SYS_move_mount,
+        libc::SYS_fsopen,
+        libc::SYS_fsconfig,
+        libc::SYS_fsmount,
+        libc::SYS_fspick,
+        libc::SYS_mount_setattr,
+        libc::SYS_unshare,
+        libc::SYS_setns,
+        libc::SYS_clone3,
+        libc::SYS_bpf,
+        libc::SYS_perf_event_open,
+        libc::SYS_userfaultfd,
+        libc::SYS_io_uring_setup,
+        libc::SYS_io_uring_enter,
+        libc::SYS_io_uring_register,
+        libc::SYS_keyctl,
+        libc::SYS_add_key,
+        libc::SYS_request_key,
+        libc::SYS_init_module,
+        libc::SYS_finit_module,
+        libc::SYS_delete_module,
+        libc::SYS_kexec_load,
+        libc::SYS_kexec_file_load,
+        libc::SYS_reboot,
+        libc::SYS_swapon,
+        libc::SYS_swapoff,
+        libc::SYS_acct,
+        libc::SYS_quotactl,
+        libc::SYS_open_by_handle_at,
+        libc::SYS_name_to_handle_at,
+        libc::SYS_syslog,
+    ];
+
+    /// `clone` flags that create namespaces.
+    const NEW_NAMESPACES: &[libc::c_int] = &[
+        libc::CLONE_NEWUSER,
+        libc::CLONE_NEWNS,
+        libc::CLONE_NEWNET,
+        libc::CLONE_NEWPID,
+        libc::CLONE_NEWIPC,
+        libc::CLONE_NEWUTS,
+        libc::CLONE_NEWCGROUP,
+    ];
+
+    /// The compiled filter, as bwrap reads it: raw `sock_filter` structs.
+    #[allow(clippy::unnecessary_cast)] // syscall numbers are c_long, which is i32 on 32-bit targets
+    fn program() -> Result<&'static [u8], String> {
+        static PROGRAM: OnceLock<Result<Vec<u8>, String>> = OnceLock::new();
+        PROGRAM
+            .get_or_init(|| {
+                let arch = TargetArch::try_from(std::env::consts::ARCH).map_err(|e| format!("seccomp: {e:?}"))?;
+                let mut rules: BTreeMap<i64, Vec<SeccompRule>> = REFUSED.iter().map(|&nr| (nr as i64, Vec::new())).collect();
+                // clone's flags are its first argument on x86_64 and aarch64.
+                let clone = NEW_NAMESPACES
+                    .iter()
+                    .map(|&flag| {
+                        let flag = flag as u64;
+                        let cond = SeccompCondition::new(0, SeccompCmpArgLen::Qword, SeccompCmpOp::MaskedEq(flag), flag)
+                            .map_err(|e| format!("seccomp: {e}"))?;
+                        SeccompRule::new(vec![cond]).map_err(|e| format!("seccomp: {e}"))
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                rules.insert(libc::SYS_clone as i64, clone);
+                let filter = SeccompFilter::new(rules, SeccompAction::Allow, SeccompAction::Errno(libc::ENOSYS as u32), arch)
+                    .map_err(|e| format!("seccomp: {e}"))?;
+                let program: BpfProgram = filter.try_into().map_err(|e| format!("seccomp: {e:?}"))?;
+                Ok(program.iter().flat_map(|f| {
+                    let mut b = Vec::with_capacity(8);
+                    b.extend_from_slice(&f.code.to_ne_bytes());
+                    b.push(f.jt);
+                    b.push(f.jf);
+                    b.extend_from_slice(&f.k.to_ne_bytes());
+                    b
+                }).collect())
+            })
+            .as_deref()
+            .map_err(Clone::clone)
+    }
+
+    /// Add `--seccomp FD` to a bwrap command line. The returned pipe must stay
+    /// open until the command has started.
+    pub fn attach(cmd: &mut std::process::Command) -> Result<Option<std::io::PipeReader>, String> {
+        let program = program()?;
+        let (reader, mut writer) = std::io::pipe().map_err(|e| format!("seccomp: {e}"))?;
+        // A few hundred bytes: well under a pipe's buffer, so this can't block.
+        writer.write_all(program).map_err(|e| format!("seccomp: {e}"))?;
+        drop(writer);
+        let fd = reader.as_raw_fd();
+        cmd.arg("--seccomp").arg(fd.to_string());
+        // The pipe is close-on-exec; keep it open in bwrap only.
+        unsafe {
+            cmd.pre_exec(move || {
+                if libc::fcntl(fd, libc::F_SETFD, 0) == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        Ok(Some(reader))
+    }
+}

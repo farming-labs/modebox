@@ -42,5 +42,8 @@ swc_common = { version = "26", optional = true }
 swc_ecma_parser = { version = "46", optional = true }
 swc_ecma_ast = { version = "29", optional = true }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+seccompiler = "0.5"
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

@@ -104,3 +104,19 @@ async fn timeouts_kill_the_process_group() {
     assert_eq!(v, Value::Bool(true));
     assert!(t.elapsed() < Duration::from_secs(5));
 }
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn seccomp_refuses_new_namespaces() {
+    if !sandboxed() { return; }
+    let root = scratch("seccomp");
+    let v = sh(
+        ShellPolicy::new(&root),
+        "const a = await sh('unshare --user true'); const b = await sh('echo ok; (sleep 0 &); wait'); [a.exitCode, a.stderr, b.stdout]",
+    )
+    .await;
+    let v = v.to_json();
+    assert_ne!(v[0], serde_json::json!(0), "{v}");
+    assert!(v[1].as_str().unwrap_or("").contains("not implemented"), "{v}");
+    assert_eq!(v[2], serde_json::json!("ok\n"), "ordinary commands still work: {v}");
+}

@@ -202,13 +202,13 @@ How approvals reach the user, per client capability (all three are exercised by 
 - **Defense in depth.** A memory-safety bug in QuickJS stays inside wasm linear memory, behind wasmtime guard pages, Cranelift bounds checks, and a per-instance memory cap.
 - **Tokens.** They are XChaCha20-Poly1305 sealed, so they're confidential and tamper-proof, and they expire. The `modebox` CLI and MCP server seal them with `$MODEBOX_SECRET`, or else with a key generated on first use and saved at `~/.config/modebox/secret` (owner-only), so they still open after a restart. Library users choose their own key (`EngineConfig::secret`); without one, tokens only open in the process that made them. Each is bound to the exact engine image (a hash of the base memory) and to a hash of the tool set. They're single-use. The CLI and MCP server record used tokens under `~/.local/state/modebox/continuations` (or `$MODEBOX_STATE_DIR`), so that holds across processes too. Library users get an in-memory record by default. Processes that resume each other's tokens should share a `StoreContinuations` over any store with atomic create, such as a directory or a GCS/Azure bucket (`continuationsDir` in Node).
 - **Resumes can't widen limits.** The limits are sealed into the token.
-- **`sh()` runs under Seatbelt or bubblewrap.** Writes are allowed only under the workspace and temp dirs. `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.docker`, `~/.config/gh` and `.netrc` can't be read. Network is off by default, the environment is scrubbed, and the whole process group is killed on timeout.
+- **`sh()` runs under Seatbelt or bubblewrap.** On Linux, a seccomp filter also refuses syscalls commands don't need, such as creating namespaces, mounting, `ptrace`, BPF and io_uring. Writes are allowed only under the workspace and temp dirs. `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.docker`, `~/.config/gh` and `.netrc` can't be read. Network is off by default, the environment is scrubbed, and the whole process group is killed on timeout.
 
 ## Limitations / roadmap
 
 - **CPU-heavy JS:** QuickJS is an interpreter, so heavy computation is much slower than on V8. Next: an opt-in V8-isolate tier in a separate sandboxed process.
 - **Missing web APIs:** `Intl` and `URL` aren't available yet.
-- **Shell sandbox platforms:** Seatbelt on macOS and bubblewrap on Linux. CI runs both on every change. Windows has no shell sandbox, and Linux has no seccomp filter yet.
+- **Shell sandbox platforms:** Seatbelt on macOS, and bubblewrap plus a seccomp filter on Linux. CI runs both on every change. Windows has no shell sandbox.
 - **Node binding:** built for darwin-arm64 only. Prebuilds per platform via `@napi-rs/cli` are TODO.
 - **Python:** a Monty or CPython-wasi guest would reuse the same snapshot and resume machinery.
 - **Shared policy file:** one policy format that imports/exports opencode, Codex and Claude Code permission configs.
