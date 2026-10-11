@@ -251,6 +251,21 @@ impl<'a, 'js> Fmt<'a, 'js> {
                 return self.error(obj, depth);
             }
         }
+        // Built-ins that stand for a value (URL, URLSearchParams) show it.
+        if let Some(f) = obj.get::<_, Value>(self.h.encode_as.clone()).ok().and_then(Value::into_function) {
+            let shown = match f.call::<_, Value>((rquickjs::function::This(obj.clone()),)) {
+                Ok(s) if s.is_string() => quote(&self.text(&s)),
+                _ => {
+                    let _ = self.ctx.catch();
+                    "<unreadable>".into()
+                }
+            };
+            let ctor = match self.h.ctor_name.call::<_, Value>((v.clone(),)) {
+                Ok(c) if c.is_string() => self.text(&c),
+                _ => String::new(),
+            };
+            return format!("{ctor} {{ {shown} }}");
+        }
         let is_array = v.is_array();
         let is_map = unsafe { qjs::JS_IsMap(raw) };
         let is_set = unsafe { qjs::JS_IsSet(raw) };

@@ -15,6 +15,7 @@ rquickjs = { version = "0.14", default-features = false, features = ["std", "dis
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 base64 = "0.22"
+url = "2"
 rand_chacha = { version = "0.9", default-features = false }
 rand_core = { version = "0.9", default-features = false }
 

@@ -44,6 +44,8 @@ pub struct Helpers<'js> {
     pub view_bytes: Function<'js>,
     pub mk_view: Function<'js>,
     pub ctor_name: Function<'js>,
+    /// Symbol of a method that gives the value to send instead (a URL's href).
+    pub encode_as: Value<'js>,
 }
 
 impl<'js> Helpers<'js> {
@@ -62,6 +64,7 @@ impl<'js> Helpers<'js> {
             view_bytes: f("viewBytes"),
             mk_view: f("mkView"),
             ctor_name: f("ctorName"),
+            encode_as: hooks.get("encodeAs").expect("prelude hook"),
         }
     }
 }
@@ -595,6 +598,13 @@ impl<'a, 'js> Encoder<'a, 'js> {
             }
         }
 
+        if let Some(replacement) = self.encoded_as(obj)? {
+            self.enter(v)?;
+            self.value(&replacement)?;
+            self.stack.pop();
+            return Ok(());
+        }
+
         self.enter(v)?;
         // An own `$t` key would read as a tag, so such objects are wrapped.
         let mut escaped = false;
@@ -634,6 +644,25 @@ impl<'a, 'js> Encoder<'a, 'js> {
         }
         self.stack.pop();
         Ok(())
+    }
+
+    /// What a built-in with an encode method (URL, URLSearchParams) sends instead.
+    fn encoded_as(&self, obj: &Object<'js>) -> Result<Option<Value<'js>>, EncodeError> {
+        let Some(f) = self.prop_value(obj, self.h.encode_as.clone()).and_then(Value::into_function) else { return Ok(None) };
+        f.call((rquickjs::function::This(obj.clone()),)).map(Some).map_err(|_| {
+            let _ = self.ctx.catch();
+            EncodeError::new("could not be converted")
+        })
+    }
+
+    fn prop_value(&self, obj: &Object<'js>, key: Value<'js>) -> Option<Value<'js>> {
+        match obj.get::<_, Value>(key) {
+            Ok(v) => Some(v),
+            Err(_) => {
+                let _ = self.ctx.catch();
+                None
+            }
+        }
     }
 
     fn key(&self, key: rquickjs::Result<Atom<'js>>) -> Result<Utf8<'js>, EncodeError> {

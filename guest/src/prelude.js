@@ -93,6 +93,117 @@
   hidden(g, 'atob', (s) => al.atob(String(s)));
   hidden(g, 'btoa', (s) => al.btoa(String(s)));
   hidden(g, 'structuredClone', (v) => al.clone(v));
+
+  // -- URL and URLSearchParams (WHATWG; parsing in Rust, the `url` crate) ----
+  // Values that cross the boundary as something else: a URL as its href.
+  const ENCODE = Symbol('modebox.encode');
+  let attachParams, resetParams, setSearch;
+  class URLSearchParams {
+    #list = [];
+    #url = null;
+    static {
+      attachParams = (p, url) => { p.#url = url; };
+      resetParams = (p, search) => { p.#list = al.formParse(search.startsWith('?') ? search.slice(1) : search); };
+    }
+    constructor(init = '') {
+      if (init instanceof URLSearchParams) {
+        this.#list = init.#list.map(([k, v]) => [k, v]);
+      } else if (init !== null && typeof init === 'object') {
+        if (typeof init[Symbol.iterator] === 'function') {
+          for (const pair of init) {
+            const kv = [...pair];
+            if (kv.length !== 2) throw new TypeError('URLSearchParams: each pair needs exactly a name and a value');
+            this.#list.push([String(kv[0]), String(kv[1])]);
+          }
+        } else {
+          for (const k of Object.keys(init)) this.#list.push([k, String(init[k])]);
+        }
+      } else {
+        resetParams(this, String(init));
+      }
+    }
+    #changed() { if (this.#url) setSearch(this.#url, this.toString()); }
+    get size() { return this.#list.length; }
+    append(name, value) { this.#list.push([String(name), String(value)]); this.#changed(); }
+    delete(name, value) {
+      name = String(name);
+      this.#list = this.#list.filter(([k, v]) => !(k === name && (value === undefined || v === String(value))));
+      this.#changed();
+    }
+    get(name) { name = String(name); const e = this.#list.find(([k]) => k === name); return e ? e[1] : null; }
+    getAll(name) { name = String(name); return this.#list.filter(([k]) => k === name).map(([, v]) => v); }
+    has(name, value) { name = String(name); return this.#list.some(([k, v]) => k === name && (value === undefined || v === String(value))); }
+    set(name, value) {
+      name = String(name); value = String(value);
+      const i = this.#list.findIndex(([k]) => k === name);
+      if (i < 0) this.#list.push([name, value]);
+      else this.#list = this.#list.filter(([k], j) => j <= i || k !== name).map((e, j) => (j === i ? [name, value] : e));
+      this.#changed();
+    }
+    sort() {
+      // Stable, by UTF-16 code units, as the standard says.
+      this.#list = this.#list.map((e, i) => [e, i]).sort(([a, i], [b, j]) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : i - j)).map(([e]) => e);
+      this.#changed();
+    }
+    forEach(fn, thisArg) { for (const [k, v] of this.#list) fn.call(thisArg, v, k, this); }
+    *entries() { for (const [k, v] of this.#list) yield [k, v]; }
+    *keys() { for (const [k] of this.#list) yield k; }
+    *values() { for (const [, v] of this.#list) yield v; }
+    [Symbol.iterator]() { return this.entries(); }
+    toString() { return al.formSerialize(this.#list); }
+    [ENCODE]() { return this.toString(); }
+    get [Symbol.toStringTag]() { return 'URLSearchParams'; }
+  }
+
+  const PARTS = ['protocol', 'username', 'password', 'host', 'hostname', 'port', 'pathname', 'search', 'hash'];
+  class URL {
+    #r;
+    #params = null;
+    static {
+      setSearch = (u, query) => { u.#r = al.urlSet(u.#r.href, 'search', query) ?? u.#r; };
+    }
+    constructor(url, base) {
+      const r = al.urlParse(String(url), base === undefined ? undefined : String(base));
+      if (!r) throw new TypeError(`Invalid URL: ${String(url)}`);
+      this.#r = r;
+    }
+    static canParse(url, base) { return al.urlParse(String(url), base === undefined ? undefined : String(base)) !== null; }
+    static parse(url, base) { try { return new URL(url, base); } catch { return null; } }
+    get href() { return this.#r.href; }
+    set href(v) {
+      const r = al.urlParse(String(v));
+      if (!r) throw new TypeError(`Invalid URL: ${String(v)}`);
+      this.#r = r;
+      if (this.#params) resetParams(this.#params, r.search);
+    }
+    get origin() { return this.#r.origin; }
+    get searchParams() {
+      if (!this.#params) {
+        this.#params = new URLSearchParams(this.#r.search);
+        attachParams(this.#params, this);
+      }
+      return this.#params;
+    }
+    toString() { return this.#r.href; }
+    toJSON() { return this.#r.href; }
+    [ENCODE]() { return this.#r.href; }
+    get [Symbol.toStringTag]() { return 'URL'; }
+    static {
+      for (const part of PARTS) {
+        Object.defineProperty(URL.prototype, part, {
+          get() { return this.#r[part]; },
+          set(v) {
+            this.#r = al.urlSet(this.#r.href, part, String(v)) ?? this.#r;
+            if (part === 'search' && this.#params) resetParams(this.#params, this.#r.search);
+          },
+          enumerable: true,
+          configurable: true,
+        });
+      }
+    }
+  }
+  hidden(g, 'URL', URL);
+  hidden(g, 'URLSearchParams', URLSearchParams);
   hidden(g, 'queueMicrotask', (fn) => { Promise.resolve().then(fn); });
 
   // -- timers: backed by the host's $sleep call (real or virtual time) -------
@@ -176,6 +287,7 @@
       const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
       return new Ctor(buf);
     },
+    encodeAs: ENCODE,
     ctorName: (v) => {
       try { const c = Object.getPrototypeOf(v)?.constructor; return typeof c === 'function' ? c.name : ''; } catch { return ''; }
     },
