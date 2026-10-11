@@ -197,6 +197,8 @@ How approvals reach the user, per client capability (all three are exercised by 
 
 ## Security model
 
+The full threat model, what isn't defended against, and how to report a vulnerability are in [SECURITY.md](SECURITY.md).
+
 - **The guest can't reach anything.** The wasm module imports exactly two functions: `modebox.emit` (events to the host) and a clock. There's no WASI at all, so no files, sockets, env or randomness except what the host seeds. `fetch`, `require`, `process` and `import()` don't exist.
 - **The only authority is your tools.** The host validates every call name against the toolbox. Arguments and results are size-limited and depth-limited, with cycle detection.
 - **Defense in depth.** A memory-safety bug in QuickJS stays inside wasm linear memory, behind wasmtime guard pages, Cranelift bounds checks, and a per-instance memory cap.
@@ -204,7 +206,9 @@ How approvals reach the user, per client capability (all three are exercised by 
 - **Resumes can't widen limits.** The limits are sealed into the token.
 - **`sh()` runs under Seatbelt or bubblewrap.** Writes are allowed only under the workspace and temp dirs. `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.docker`, `~/.config/gh` and `.netrc` can't be read. Network is off by default, the environment is scrubbed, and the whole process group is killed on timeout.
 
-## Limitations / roadmap
+## Limitations and roadmap
+
+Security-relevant gaps are listed under "Known limitations" in [SECURITY.md](SECURITY.md).
 
 - **CPU-heavy JS:** QuickJS is an interpreter, so heavy computation is much slower than on V8. Next: an opt-in V8-isolate tier in a separate sandboxed process.
 - **Missing web APIs:** `Intl` and `URL` aren't available yet.
