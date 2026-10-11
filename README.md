@@ -96,6 +96,12 @@ cargo build --release -p modebox-cli
 }
 ```
 
+**Data flow.** Mark tools that return private data as `sources`, and tools that can send data out as `sinks`. Once a run (or session) has called a source, every call to a sink pauses for approval, even if it's allowed otherwise:
+
+```json
+"flows": { "sources": ["gmail.*", "fs.get"], "sinks": ["slack.post_*", "http.*"] }
+```
+
 Shell commands suspend for approval unless they start with an `allow` entry (word for word), use plain arguments only (no quotes, `$`, `&`, `|`, `;`, redirects, globs or braces), and avoid write/exec flags such as `find -delete` or `rg --pre`.
 
 #### Linux

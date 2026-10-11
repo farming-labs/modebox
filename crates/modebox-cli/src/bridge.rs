@@ -146,6 +146,16 @@ pub async fn build(cfg: &Config) -> Result<Bridge> {
         tools.add(tool);
     }
 
+    let names: Vec<String> = tools.names().map(str::to_owned).collect();
+    for name in names {
+        let matches = |globs: &[String]| globs.iter().any(|p| glob_match(p, &name));
+        let (source, sink) = (matches(&cfg.flows.sources), matches(&cfg.flows.sinks));
+        if let Some(tool) = tools.get_mut(&name) {
+            tool.source |= source;
+            tool.sink |= sink;
+        }
+    }
+
     Ok(Bridge { tools, clients })
 }
 

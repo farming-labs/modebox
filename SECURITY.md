@@ -49,7 +49,7 @@ These are known gaps. Reports that show how they can be exploited in practice ar
 
 - **An allowed tool is allowed for any purpose.**
   - A run that can read secrets through one tool and send data through another can send the secrets.
-  - Nothing yet tracks data flow between tools. Require approval for tools that send data out of your trust boundary.
+  - Data flow is tracked per run, by tool, not per value. Tools marked as `sources` and `sinks` (`"flows"` in `modebox.json`) make every sink call after a source call pause for approval. Unmarked tools aren't covered, and an approved sink call can send anything the run holds. Mark every tool that can send data out of your trust boundary as a sink, or require approval for it outright.
 - **Approvals are only as good as the approver.**
   - The prompt shows the call and its arguments. Someone has to read them.
   - For MCP clients without elicitation, the `approve` tool lets the model answer. So it's off unless `mcp.approveTool` is set, and without it those calls are denied. Turn it on only if the harness asks the user before every call to that tool. Prefer clients that support elicitation or MRTR, where the prompt goes to the user.

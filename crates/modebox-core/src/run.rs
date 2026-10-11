@@ -18,7 +18,7 @@ use crate::engine::{
     now_epoch_us,
 };
 use crate::snapshot;
-use crate::tools::{Call, ToolError, ToolResult, Toolbox};
+use crate::tools::{Call, Tool, ToolError, ToolResult, Toolbox};
 use crate::value::Value;
 
 // ---- public types ---------------------------------------------------------------
@@ -347,6 +347,9 @@ struct Header {
     /// Extension state (e.g. staged filesystem writes), base64 by name.
     #[serde(default)]
     ext: BTreeMap<String, String>,
+    /// Source tools called so far (data-flow checks).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    sources: Vec<String>,
 }
 
 const SLEEP: &str = "$sleep";
@@ -487,10 +490,11 @@ impl Engine {
         };
         // Limits are part of the sealed state: a resume can't widen them.
         let opts = RunOptions { limits: header.limits.clone(), ..opts };
-        let guest = match Guest::restore(inner, &diff, clock, guest_memory_cap(inner, &opts.limits)).await {
+        let mut guest = match Guest::restore(inner, &diff, clock, guest_memory_cap(inner, &opts.limits)).await {
             Ok(g) => g,
             Err(e) => return (fail(RunError::new(ErrorKind::Internal, "ModeboxError", format!("{e:#}"))), None),
         };
+        guest.store.data_mut().sources = header.sources.iter().cloned().collect();
         let mut d = Driver::new(inner, tools, opts, guest, header.run_id.clone(), t0);
         d.stats.instantiate = t0.elapsed();
         d.calls_made = header.calls_made;
@@ -844,7 +848,7 @@ impl<'a> Driver<'a> {
             run_id: self.run_id.clone(),
             resume: None,
         };
-        if let Some(reason) = tool.needs_approval(&probe) {
+        if let Some(reason) = tool.needs_approval(&probe).or_else(|| self.flow_check(tool)) {
             call.kind = Some("approval".into());
             call.payload = Some(Value::object([("reason", Value::from(reason))]).to_tagged());
             // Approvals raised while already suspending join the same batch,
@@ -876,11 +880,28 @@ impl<'a> Driver<'a> {
         }
     }
 
+    /// A sink call after a source call needs approval: private data could
+    /// be on its way out.
+    fn flow_check(&self, tool: &Tool) -> Option<String> {
+        let read = &self.guest.store.data().sources;
+        if !tool.sink || read.is_empty() {
+            return None;
+        }
+        let mut names: Vec<&str> = read.iter().map(String::as_str).take(3).collect();
+        if read.len() > 3 {
+            names.push("…");
+        }
+        Some(format!("{} can send data out, and this run has read private data from {}", tool.name, names.join(", ")))
+    }
+
     fn start_call(&mut self, call: PendingCall) {
         let Some(tool) = self.tools.get(&call.name) else {
             self.settle_err(call.id, &ToolError::new(format!("{} is not a tool", call.name)).with_name("ReferenceError"));
             return;
         };
+        if tool.source {
+            self.guest.store.data_mut().sources.insert(tool.name.clone());
+        }
         let args = call.args();
         self.emit_event(Event::CallStarted { id: call.id, tool: call.name.clone(), args: args.clone() });
         let c = Call {
@@ -1034,6 +1055,7 @@ impl<'a> Driver<'a> {
             interrupts: self.interrupts.clone(),
             deferred: self.deferred.clone(),
             ext: self.tools.save_extensions(),
+            sources: st.sources.iter().cloned().collect(),
         };
         let diff = self.guest.snapshot(&self.engine.base).await;
         let blob = snapshot::pack(&header, &diff);
