@@ -30,3 +30,10 @@ zstd = "0.13"
 [profile.release]
 lto = "thin"
 codegen-units = 4
+
+# CI: optimized like release (some tests assert timings), but without LTO,
+# which dominates the build time of the many test binaries.
+[profile.ci]
+inherits = "release"
+lto = false
+codegen-units = 16
