@@ -66,7 +66,7 @@ jobs:
         env:
           MODEBOX_BIN: target/ci/modebox
         run: |
-          for mode in legacy elicit mrtr; do
+          for mode in legacy elicit mrtr deny; do
             echo "::group::$mode"
             node tests/fixtures/drive-mcp.mjs "$mode"
             echo "::endgroup::"

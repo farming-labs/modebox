@@ -157,7 +157,8 @@ async fn real_main() -> Result<()> {
             let engine = engine()?;
             let bridge = bridge::build(&cfg).await?;
             let has_approvals = !cfg.approve.is_empty() || cfg.shell.enabled;
-            let server = mcp::ModeboxServer::new(engine, bridge.tools, cfg.limits.to_limits(), has_approvals);
+            let approve_tool = has_approvals && cfg.mcp.approve_tool;
+            let server = mcp::ModeboxServer::new(engine, bridge.tools, cfg.limits.to_limits(), approve_tool);
             let _keep = bridge.clients;
             server.serve_stdio().await
         }

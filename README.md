@@ -185,15 +185,17 @@ await fs.commit({ message: 'rename oldApi' });                            // pau
 ## Integrations
 
 **opencode**, in `integrations/opencode/`:
-- `opencode.json` adds the MCP server. MCP requests time out after 5 s by default, so the snippet raises the timeout. It also sets `"modebox_approve": "ask"` because opencode allows every tool by default.
+- `opencode.json` adds the MCP server. MCP requests time out after 5 s by default, so the snippet raises the timeout. It also sets `"modebox_approve": "ask"`, because opencode allows every tool by default. That prompt is what makes it safe to turn on the `approve` tool with `"mcp": { "approveTool": true }` in `modebox.json`.
 - `.opencode/plugin/modebox-sandbox.ts` routes every built-in `bash` call through `modebox sh`. opencode has no OS sandbox of its own, and this adds one without changing how the agent works.
 
 **Claude Code**: `integrations/claude-code/.mcp.json`. **Codex**: `integrations/codex/config.toml`.
 
-How approvals reach the user, per client capability (all three are exercised by `tests/fixtures/drive-mcp.mjs`):
+How approvals reach the user, per client capability (`tests/fixtures/drive-mcp.mjs` exercises each one):
 1. **MCP 2026-07-28 clients**: the server returns `input_required` with an elicitation, and the sealed VM goes in `requestState`. The server keeps no state, and an approval can arrive after a restart.
 2. **Clients with elicitation**: the user gets an inline prompt and the run continues.
-3. **Everyone else**: the run pauses and returns an id. `approve` resumes it, and the harness's permission prompt for that tool is the user's decision.
+3. **Everyone else**: by default the call is denied. The code gets a `PermissionDenied` error, and the result explains why. Only the model could answer an `approve` tool, so it's off unless `modebox.json` sets `"mcp": { "approveTool": true }`. Set it only if the harness asks the user before each call to that tool. Then the run pauses and returns an id, and `approve` resumes it.
+
+`execute` and `approve` are annotated as destructive and open-world, so harnesses that auto-allow read-only tools still ask about them. `types` is read-only.
 
 ## Security model
 

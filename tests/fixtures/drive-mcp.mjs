@@ -1,11 +1,14 @@
 // Drive `modebox mcp` like an agent harness would, through each approval path:
-//   node tests/fixtures/drive-mcp.mjs legacy|elicit|mrtr
+//   node tests/fixtures/drive-mcp.mjs legacy|elicit|mrtr|deny
+// legacy: no elicitation, `mcp.approveTool` on, the `approve` tool resumes.
+// deny:   no elicitation, `approveTool` off (the default): the call is denied.
 // Exits non-zero if any step gives the wrong answer, so CI can run it.
 import { spawn } from 'node:child_process';
 
 const mode = process.argv[2] ?? 'legacy';
 const bin = process.env.MODEBOX_BIN ?? './target/release/modebox';
-const proc = spawn(bin, ['-c', 'modebox.example.json', 'mcp'], { stdio: ['pipe', 'pipe', 'inherit'] });
+const config = mode === 'legacy' ? 'tests/fixtures/approve-tool.json' : 'modebox.example.json';
+const proc = spawn(bin, ['-c', config, 'mcp'], { stdio: ['pipe', 'pipe', 'inherit'] });
 const waiters = new Map();
 let buf = '', nextId = 0, prompts = 0, done = false;
 const failures = [];
@@ -57,6 +60,9 @@ const list = await request('tools/list', mode === 'mrtr' ? { _meta: meta2026 } :
 const names = list.result.tools.map((t) => t.name);
 console.log('tools:', names.join(', '));
 expect(['execute', 'types'].every((n) => names.includes(n)), 'tools/list has execute and types');
+expect(names.includes('approve') === (mode === 'legacy'), 'approve is listed only when approveTool is on');
+const annotations = Object.fromEntries(list.result.tools.map((t) => [t.name, t.annotations ?? {}]));
+expect(annotations.types.readOnlyHint === true && annotations.execute.destructiveHint === true, 'tools carry annotations');
 
 console.log('\n> execute (read-only)');
 const summary = text(await call('execute', { code: SUMMARIZE }));
@@ -85,8 +91,15 @@ if (mode === 'mrtr') {
 }
 const deleted = text(res);
 console.log(deleted);
-expect(prompts === (mode === 'legacy' ? 0 : 1), `the user was asked ${mode === 'legacy' ? 'through the approve tool' : 'once'}`);
-expect(deleted.includes('"deleted": 2') && !deleted.includes('"standup"'), 'approved delete removes the standup note');
+if (mode === 'deny') {
+  expect(prompts === 0, 'nobody was prompted');
+  expect(deleted.includes('PermissionDenied') && deleted.includes('approveTool'), 'the call is denied and the result says how to allow it');
+  const left = text(await call('execute', { code: `(await notes.list_notes()).map(n => n.title)` }));
+  expect(left.includes('"standup"'), 'nothing was deleted');
+} else {
+  expect(prompts === (mode === 'legacy' ? 0 : 1), `the user was asked ${mode === 'legacy' ? 'through the approve tool' : 'once'}`);
+  expect(deleted.includes('"deleted": 2') && !deleted.includes('"standup"'), 'approved delete removes the standup note');
+}
 
 console.log('\n> execute (uses state from earlier calls)');
 const state = text(await call('execute', { code: `({ earlier: work.length, deleted: typeof target === 'object' ? target.title : null })` }));
