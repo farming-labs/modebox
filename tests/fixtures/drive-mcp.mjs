@@ -78,6 +78,9 @@ if (mode === 'legacy') {
   if (!id) bail('no approval id in the paused result');
   console.log('\n> approve', id);
   res = await call('approve', { id, approve: true });
+  console.log('\n> approve again (a retry after a lost response)');
+  const again = await call('approve', { id, approve: true });
+  expect(text(again) === text(res), 'a retried approve returns the same result');
 }
 if (mode === 'mrtr') {
   const r = res.result;
@@ -88,6 +91,9 @@ if (mode === 'mrtr') {
   const inputResponses = Object.fromEntries(Object.keys(r.inputRequests).map((k) => [k, { action: 'accept', content: { approve: true } }]));
   console.log('\n> retry with inputResponses + requestState (server kept no state)');
   res = await call('execute', { code: DELETE }, { inputResponses, requestState: r.requestState });
+  console.log('\n> retry the same request (as if the response was lost)');
+  const again = await call('execute', { code: DELETE }, { inputResponses, requestState: r.requestState });
+  expect(text(again) === text(res), 'a retried resume returns the same result, not "already used"');
 }
 const deleted = text(res);
 console.log(deleted);

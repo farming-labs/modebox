@@ -16,6 +16,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use modebox_core::{Engine, Interrupt, Limits, Outcome, Resolution, RunOptions, RunResult, Session, Toolbox, Value, declarations};
 use rmcp::model::{
@@ -42,6 +43,41 @@ pub struct ModeboxServer {
     pending: Mutex<HashMap<String, PendingRun>>,
     /// Offer `approve` to clients that can't prompt (see `McpConfig`).
     approve_tool: bool,
+    replays: Replays,
+}
+
+/// Results of resumes, by the token (or approval id) they used up. A client
+/// that retries a request whose response it never got receives the same
+/// result again instead of "already used"; a retry that arrives while the
+/// first attempt is still running waits for it. The first decision wins.
+#[derive(Default)]
+struct Replays {
+    entries: Mutex<HashMap<[u8; 32], Replay>>,
+}
+
+struct Replay {
+    at: Instant,
+    result: Arc<tokio::sync::OnceCell<CallToolResponse>>,
+}
+
+/// Retries come within seconds; keep results a while longer, and only a few.
+const REPLAY_FOR: Duration = Duration::from_secs(600);
+const REPLAY_MAX: usize = 256;
+
+impl Replays {
+    fn slot(&self, key: &str) -> Arc<tokio::sync::OnceCell<CallToolResponse>> {
+        let k = *blake3::hash(key.as_bytes()).as_bytes();
+        let now = Instant::now();
+        let mut entries = self.entries.lock().unwrap();
+        entries.retain(|_, r| now.duration_since(r.at) < REPLAY_FOR);
+        if entries.len() >= REPLAY_MAX
+            && !entries.contains_key(&k)
+            && let Some(oldest) = entries.iter().min_by_key(|(_, r)| r.at).map(|(k, _)| *k)
+        {
+            entries.remove(&oldest);
+        }
+        entries.entry(k).or_insert_with(|| Replay { at: now, result: Default::default() }).result.clone()
+    }
 }
 
 struct PendingRun {
@@ -67,6 +103,7 @@ impl ModeboxServer {
             decls,
             pending: Mutex::new(HashMap::new()),
             approve_tool,
+            replays: Replays::default(),
         }
     }
 
@@ -357,12 +394,19 @@ what they said; never decide on their behalf.",
         let args = Json::Object(request.arguments.clone().unwrap_or_default());
         match request.name.as_ref() {
             "execute" => {
-                let mut session = self.session.lock().await;
                 if let Some(state) = &request.request_state {
-                    let decisions = decisions_from_responses(&request.input_responses.clone().unwrap_or_default());
-                    let r = session.resume(state, decisions).await;
-                    return self.finish(&mut session, r, &context).await;
+                    let slot = self.replays.slot(&format!("state:{state}"));
+                    let responses = request.input_responses.clone().unwrap_or_default();
+                    let result = slot
+                        .get_or_try_init(|| async {
+                            let mut session = self.session.lock().await;
+                            let r = session.resume(state, decisions_from_responses(&responses)).await;
+                            self.finish(&mut session, r, &context).await
+                        })
+                        .await?;
+                    return Ok(result.clone());
                 }
+                let mut session = self.session.lock().await;
                 let Some(code) = args["code"].as_str() else {
                     return Err(McpError::invalid_params("execute: `code` must be a string", None));
                 };
@@ -395,17 +439,23 @@ what they said; never decide on their behalf.",
             "approve" if self.approve_tool => {
                 let id = args["id"].as_str().unwrap_or("");
                 let approve = args["approve"].as_bool().unwrap_or(false);
-                let Some(p) = self.pending.lock().unwrap().remove(id) else {
-                    return Err(McpError::invalid_params(format!("no paused run with id {id}"), None));
-                };
-                let decisions = p
-                    .interrupts
-                    .iter()
-                    .map(|i| (i.id, if approve { Resolution::Approve } else { Resolution::Deny("the user declined".into()) }))
-                    .collect::<Vec<_>>();
-                let mut session = self.session.lock().await;
-                let r = session.resume(&p.continuation, decisions).await;
-                self.finish(&mut session, r, &context).await
+                let slot = self.replays.slot(&format!("approve:{id}"));
+                let result = slot
+                    .get_or_try_init(|| async {
+                        let Some(p) = self.pending.lock().unwrap().remove(id) else {
+                            return Err(McpError::invalid_params(format!("no paused run with id {id}"), None));
+                        };
+                        let decisions = p
+                            .interrupts
+                            .iter()
+                            .map(|i| (i.id, if approve { Resolution::Approve } else { Resolution::Deny("the user declined".into()) }))
+                            .collect::<Vec<_>>();
+                        let mut session = self.session.lock().await;
+                        let r = session.resume(&p.continuation, decisions).await;
+                        self.finish(&mut session, r, &context).await
+                    })
+                    .await?;
+                Ok(result.clone())
             }
             other => Err(McpError::invalid_params(format!("unknown tool {other}"), None)),
         }
