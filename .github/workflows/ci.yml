@@ -55,7 +55,7 @@ jobs:
           MODEBOX_REQUIRE_SANDBOX: "1"
         run: cargo test --profile ci --workspace --locked
       - name: Build the CLI and the Node binding
-        run: cargo build --profile ci -p modebox-cli -p modebox-node --locked
+        run: cargo build --profile ci -p modebox -p modebox-node --locked
       - name: Node tests
         run: |
           lib=target/ci/libmodebox_node.so

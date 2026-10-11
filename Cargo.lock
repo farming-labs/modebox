@@ -1840,7 +1840,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "modebox-cli"
+name = "modebox"
 version = "0.1.0"
 dependencies = [
  "anyhow",

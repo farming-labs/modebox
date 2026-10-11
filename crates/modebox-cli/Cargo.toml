@@ -1,10 +1,15 @@
 [package]
-name = "modebox-cli"
-description = "modebox command line: run sandboxed code, sandboxed shell, and an MCP code-mode server"
+name = "modebox"
+description = "Sandboxed code execution for AI agents: run agent-written JS/TS in WebAssembly, shell commands in an OS sandbox, and an MCP code-mode server"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords = ["sandbox", "mcp", "ai-agents", "wasm", "cli"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "modebox"
