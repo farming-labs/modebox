@@ -34,10 +34,24 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      - name: Install bubblewrap
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap
+          # Ubuntu 24.04 blocks unprivileged user namespaces unless AppArmor
+          # allows them; this is the profile the README tells users to add.
+          printf '%s\n' 'abi <abi/4.0>,' 'include <tunables/global>' \
+            'profile bwrap /usr/bin/bwrap flags=(unconfined) {' '  userns,' '}' \
+            | sudo tee /etc/apparmor.d/bwrap
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       # Release: some tests assert timings that only hold for optimized builds.
       - name: Rust tests
+        env:
+          # Shell tests fail instead of skipping when the sandbox can't start.
+          MODEBOX_REQUIRE_SANDBOX: "1"
         run: cargo test --release --workspace --locked
       - name: Build the CLI and the Node binding
         run: cargo build --release -p modebox-cli -p modebox-node --locked
