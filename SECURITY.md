@@ -37,7 +37,9 @@ Include what you ran, what happened and what you expected, and the modebox commi
 - **The shell tool.** `sh()` runs under Seatbelt (macOS) or bubblewrap (Linux):
   - Writes are allowed only in the workspace and temp dirs.
   - Common credential stores can't be read.
-  - Network is off unless enabled, the environment is scrubbed, and a timeout kills the whole process group.
+  - Network is off unless enabled, or limited to listed hosts through a proxy on the host.
+  - On Linux, a seccomp filter refuses syscalls commands don't need: namespaces, mounts, `ptrace`, BPF, io_uring and similar.
+  - The environment is scrubbed, and a timeout kills the whole process group.
   - If the sandbox can't start, `sh()` refuses to run rather than running unconfined.
 - **Files.** The `fs` capability sees only the configured mounts. Deny globs hide secrets such as `.env`, keys and `.git`. Writes are staged, and they commit only if the file hasn't changed since it was read.
 
@@ -53,13 +55,12 @@ These are known gaps. Reports that show how they can be exploited in practice ar
   - With the legacy `approve` MCP tool, the model asks and the model can answer, unless the harness stops it from calling that tool. Prefer clients that support elicitation or MRTR, where the prompt goes to the user.
 - **Retries.** A token is used up when a resume starts. If the resume fails (the process dies, the connection drops), retrying with the same token is refused.
 - **The shell sandbox is a process sandbox, not a VM.**
-  - Commands share the kernel with the host.
-  - Linux has no seccomp filter yet.
-  - Network access is all or nothing.
+  - Commands share the kernel with the host. On Linux, the seccomp filter narrows what they can reach, but it's a deny list, not an allow list.
+  - Host-limited network works through proxy variables. Programs that ignore them get no network, rather than unchecked network. Allowed hosts can still receive whatever the command sends them.
   - Reads are allowed everywhere except a deny list, so secrets outside those directories can be read: project `.env` files, for example. Keep secrets out of reach, or don't enable the shell.
   - On macOS, Apple has deprecated the `sandbox-exec` command. It still works, and Codex uses it too.
   - Windows has no shell sandbox.
-- **Local files and races.** The local directory store checks paths before it opens them. Another local process that swaps a path for a symlink between the check and the open can redirect the access. Hard links to files outside the root aren't detected.
+- **Local files.** The local directory store opens files refusing symlinks, so a path swapped for a symlink after the check fails instead of escaping. Linux kernels before 5.6 can only pin the last component. Writes replace files rather than editing them, so a hard link can't carry a write outside the root. Reading a file that is hard-linked from outside the root is still allowed, as pnpm's `node_modules` needs.
 - **Denial of service on the host.** Limits bound a single run. Many concurrent runs, or tools that are expensive to call, can still exhaust the host. Put your own limits on concurrency and on what tools do.
 - **Side channels.** Sandboxed code shares a process with the host. Timing and resource-usage side channels aren't defended against beyond what wasmtime provides.
 - **Keys and tokens.**
