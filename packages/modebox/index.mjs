@@ -9,7 +9,32 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const native = require(process.env.MODEBOX_NATIVE ?? './modebox.node');
+const native = loadNative();
+
+// The native binding: `MODEBOX_NATIVE`, a local build next to this file, or
+// the package for this platform (an optional dependency, so npm installs only
+// the one that matches).
+function loadNative() {
+  if (process.env.MODEBOX_NATIVE) return require(process.env.MODEBOX_NATIVE);
+  try {
+    return require('./modebox.node');
+  } catch (e) {
+    if (e.code !== 'MODULE_NOT_FOUND') throw e;
+  }
+  let target = `${process.platform}-${process.arch}`;
+  if (process.platform === 'linux') {
+    target += process.report?.getReport?.().header?.glibcVersionRuntime ? '-gnu' : '-musl';
+  }
+  try {
+    return require(`modebox-${target}`);
+  } catch (e) {
+    if (e.code !== 'MODULE_NOT_FOUND') throw e;
+    throw new Error(
+      `modebox: no native binding for ${target}. Prebuilt bindings cover darwin-arm64, darwin-x64, ` +
+        `linux-x64-gnu and linux-arm64-gnu; elsewhere, build crates/modebox-node and set MODEBOX_NATIVE to it.`,
+    );
+  }
+}
 
 // ---- tagged-JSON codec (mirrors the guest's codec.rs) ------------------------
 
