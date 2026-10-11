@@ -13,8 +13,8 @@ use std::time::Duration;
 
 use modebox_core::shell::{ShellPolicy, sandbox_status, shell_tool};
 use modebox_core::{
-    Call, ClockMode, Engine, EngineConfig, Event, Outcome, Resolution, RunOptions, RunResult, StoreContinuations, Value,
-    declarations,
+    Call, ClockMode, Engine, EngineConfig, Event, Interrupt, Outcome, Resolution, RunOptions, RunResult,
+    StoreContinuations, Value, declarations,
 };
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
@@ -55,13 +55,20 @@ enum Cmd {
         #[arg(long, short)]
         yes: bool,
     },
-    /// Resume a suspended run from its continuation token
+    /// Resume a suspended run from its continuation token. Asks about each
+    /// pending call when stdin is a terminal; otherwise denies them unless
+    /// told what to approve.
     Resume {
         token: String,
-        /// Approve all pending calls (default: deny)
-        #[arg(long)]
+        /// Approve every pending call
+        #[arg(long, conflicts_with = "approve_only")]
         approve: bool,
+        /// Approve only these call ids (comma-separated) and deny the rest
+        #[arg(long, value_delimiter = ',')]
+        approve_only: Vec<u32>,
     },
+    /// Show the calls a continuation token is waiting on, without using it
+    Inspect { token: String },
     /// Serve code mode to an agent harness over MCP (stdio)
     Mcp,
     /// Print TypeScript declarations for the configured tools
@@ -153,16 +160,39 @@ async fn real_main() -> Result<()> {
             }
             print_result(&r, json)
         }
-        Cmd::Resume { token, approve } => {
+        Cmd::Resume { token, approve, approve_only } => {
             let engine = engine()?;
+            let info = engine.inspect_continuation(&token).map_err(|e| anyhow::anyhow!("{}", e.message))?;
+            let pending: Vec<u32> = info.interrupts.iter().map(|i| i.id).collect();
+            if let Some(id) = approve_only.iter().find(|id| !pending.contains(id)) {
+                bail!("call {id} isn't pending in this continuation (pending: {pending:?})");
+            }
+            let interactive = !approve && approve_only.is_empty() && std::io::stdin().is_terminal();
+            let mut decisions = Vec::new();
+            for i in &info.interrupts {
+                let ok = if interactive {
+                    ask(&format!("[call {}] {} wants {}({})", i.id, i.kind, i.tool, Value::Array(i.args.clone()).to_json()))?
+                } else {
+                    approve || approve_only.contains(&i.id)
+                };
+                decisions.push((i.id, if ok { Resolution::Approve } else { Resolution::Deny("denied".into()) }));
+            }
             let bridge = bridge::build(&cfg).await?;
-            // Resolutions are keyed by interrupt id; we don't know them without
-            // the run's output, so apply one decision to ids 1..=max calls.
-            let decision = if approve { Resolution::Approve } else { Resolution::Deny("denied".into()) };
             let opts = RunOptions { limits: cfg.limits.to_limits(), ..RunOptions::default() };
-            let ids: Vec<(u32, Resolution)> = (1..=opts.limits.max_host_calls * 4).map(|i| (i, decision.clone())).collect();
-            let r = engine.resume(&token, ids, &bridge.tools, opts).await;
+            let r = engine.resume(&token, decisions, &bridge.tools, opts).await;
             print_result(&r, true)
+        }
+        Cmd::Inspect { token } => {
+            let info = engine()?.inspect_continuation(&token).map_err(|e| anyhow::anyhow!("{}", e.message))?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "runId": info.run_id,
+                    "expiresMs": info.expires_ms,
+                    "interrupts": interrupts_json(&info.interrupts),
+                }))?
+            );
+            Ok(())
         }
         Cmd::Mcp => {
             let engine = engine()?;
@@ -235,6 +265,13 @@ fn continuations_dir() -> Option<PathBuf> {
     Some(base.join("continuations"))
 }
 
+fn interrupts_json(interrupts: &[Interrupt]) -> Vec<serde_json::Value> {
+    interrupts
+        .iter()
+        .map(|i| serde_json::json!({ "id": i.id, "tool": i.tool, "kind": i.kind, "args": Value::Array(i.args.clone()).to_json(), "payload": i.payload.to_json() }))
+        .collect()
+}
+
 fn ask(question: &str) -> Result<bool> {
     eprint!("\x1b[33m?\x1b[0m {question} — allow? [y/N] ");
     std::io::stderr().flush()?;
@@ -279,11 +316,7 @@ fn print_result(r: &RunResult, json: bool) -> Result<()> {
             std::process::exit(1);
         }
         Outcome::Suspended(s) => {
-            let interrupts: Vec<_> = s
-                .interrupts
-                .iter()
-                .map(|i| serde_json::json!({ "id": i.id, "tool": i.tool, "kind": i.kind, "args": Value::Array(i.args.clone()).to_json(), "payload": i.payload.to_json() }))
-                .collect();
+            let interrupts = interrupts_json(&s.interrupts);
             println!("{}", serde_json::to_string_pretty(&serde_json::json!({
                 "status": "suspended", "interrupts": interrupts, "continuation": s.continuation, "stats": stats,
             }))?);

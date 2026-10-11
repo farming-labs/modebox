@@ -494,6 +494,25 @@ async fn deny_becomes_a_catchable_error() {
 }
 
 #[tokio::test]
+async fn inspecting_a_continuation_shows_its_calls_without_using_it() {
+    let tools = bank(Arc::new(AtomicU32::new(0)));
+    let first = engine()
+        .run("await Promise.all([bank.transfer({amount: 1}), bank.transfer({amount: 2})])", &tools, opts())
+        .await;
+    let s = first.suspension().unwrap().clone();
+    let info = engine().inspect_continuation(&s.continuation).unwrap();
+    let ids: Vec<u32> = info.interrupts.iter().map(|i| i.id).collect();
+    assert_eq!(ids, s.interrupts.iter().map(|i| i.id).collect::<Vec<_>>());
+    assert_eq!(info.interrupts[1].args[0].to_json(), serde_json::json!({ "amount": 2 }));
+    assert_eq!(info.interrupts[0].kind, "approval");
+    assert!(info.expires_ms > 0);
+    // Still resumable afterwards.
+    let res = ids.iter().map(|&id| (id, Resolution::Approve));
+    ok(&engine().resume(&s.continuation, res, &tools, opts()).await);
+    assert_eq!(engine().inspect_continuation("mb1.garbage").unwrap_err().kind, ErrorKind::InvalidContinuation);
+}
+
+#[tokio::test]
 async fn parallel_approvals_suspend_together() {
     let counter = Arc::new(AtomicU32::new(0));
     let tools = bank(counter.clone());

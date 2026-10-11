@@ -196,6 +196,17 @@ pub struct Interrupt {
     pub payload: Value,
 }
 
+/// What a continuation token is waiting on, read without using it up (see
+/// [`Engine::inspect_continuation`]).
+#[derive(Clone, Debug)]
+pub struct ContinuationInfo {
+    pub run_id: String,
+    /// Unix ms after which the token is refused.
+    pub expires_ms: u64,
+    /// The calls to resolve, one [`Resolution`] each.
+    pub interrupts: Vec<Interrupt>,
+}
+
 /// How to continue an interrupted call.
 #[derive(Clone, Debug)]
 pub enum Resolution {
@@ -304,6 +315,16 @@ impl PendingCall {
             other => vec![other],
         }
     }
+
+    fn interrupt(&self) -> Interrupt {
+        Interrupt {
+            id: self.id,
+            tool: self.name.clone(),
+            args: self.args(),
+            kind: self.kind.clone().unwrap_or_else(|| "interrupt".into()),
+            payload: self.payload.as_ref().map(Value::from_tagged).unwrap_or(Value::Undefined),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -387,6 +408,23 @@ impl Engine {
         let status = d.guest_call(GuestOp::Start(serde_json::to_vec(&request).unwrap())).await;
         let (r, g) = d.drive(status).await;
         (r, Some(g))
+    }
+
+    /// The calls a continuation token is waiting on, so each can be shown and
+    /// decided on its own. Checks the token like a resume does (it must open
+    /// with this engine's key and image), but doesn't use it up.
+    pub fn inspect_continuation(&self, continuation: &str) -> Result<ContinuationInfo, RunError> {
+        let invalid = |m: String| RunError::new(ErrorKind::InvalidContinuation, "ContinuationError", m);
+        let blob = self.inner.sealer.open(continuation).map_err(invalid)?;
+        let (header, _): (Header, snapshot::MemDiff) = snapshot::unpack(&blob).map_err(invalid)?;
+        if header.v != 1 || header.image != self.inner.image_id {
+            return Err(invalid("continuation was created by a different sandbox image".into()));
+        }
+        Ok(ContinuationInfo {
+            run_id: header.run_id,
+            expires_ms: header.expires_ms,
+            interrupts: header.interrupts.iter().map(PendingCall::interrupt).collect(),
+        })
     }
 
     /// Continue a suspended run. Every interrupt in the suspension needs a
@@ -1000,17 +1038,7 @@ impl<'a> Driver<'a> {
         let diff = self.guest.snapshot(&self.engine.base).await;
         let blob = snapshot::pack(&header, &diff);
         let token = self.engine.sealer.seal(&blob);
-        let interrupts = self
-            .interrupts
-            .iter()
-            .map(|p| Interrupt {
-                id: p.id,
-                tool: p.name.clone(),
-                args: p.args(),
-                kind: p.kind.clone().unwrap_or_else(|| "interrupt".into()),
-                payload: p.payload.as_ref().map(Value::from_tagged).unwrap_or(Value::Undefined),
-            })
-            .collect();
+        let interrupts = self.interrupts.iter().map(PendingCall::interrupt).collect();
         self.stats.continuation_bytes = Some(token.len());
         self.finish(Outcome::Suspended(Suspension { interrupts, continuation: token }))
     }
