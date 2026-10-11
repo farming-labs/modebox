@@ -120,6 +120,17 @@ pub async fn build(cfg: &Config) -> Result<Bridge> {
         vfs.install(&mut tools, "fs");
     }
 
+    if let Some(f) = &cfg.fetch {
+        let mut policy = modebox_core::fetch::FetchPolicy { allow: f.allow.clone(), ask_for_others: f.ask_for_others, ..Default::default() };
+        if let Some(n) = f.max_bytes {
+            policy.max_response_bytes = n;
+        }
+        if let Some(ms) = f.timeout_ms {
+            policy.timeout = Duration::from_millis(ms);
+        }
+        tools.add(modebox_core::fetch::fetch_tool(policy));
+    }
+
     if cfg.shell.enabled {
         if let Err(why) = sandbox_status() {
             eprintln!("modebox: warning: shell is enabled but sh() will fail: {why}");

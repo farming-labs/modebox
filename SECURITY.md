@@ -41,6 +41,11 @@ Include what you ran, what happened and what you expected, and the modebox commi
   - On Linux, a seccomp filter refuses syscalls commands don't need: namespaces, mounts, `ptrace`, BPF, io_uring and similar.
   - The environment is scrubbed, and a timeout kills the whole process group.
   - If the sandbox can't start, `sh()` refuses to run rather than running unconfined.
+- **`fetch()`.** It exists only when the host enables it, and the host makes every request:
+  - listed hosts go through directly; others need approval;
+  - addresses are checked when the connection is made, and only exact entries may reach private ones;
+  - redirects stay within reach, and responses are capped;
+  - `fetch` counts as a data-flow sink.
 - **Files.** The `fs` capability sees only the configured mounts. Deny globs hide secrets such as `.env`, keys and `.git`. Writes are staged, and they commit only if the file hasn't changed since it was read.
 
 ## Known limitations

@@ -92,6 +92,7 @@ cargo build --release -p modebox-cli
   "mcpServers": { "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"] } },
   "approve": ["github.create_*", "github.merge_*"],
   "shell": { "enabled": true, "network": ["registry.npmjs.org", "*.github.com"], "allow": ["ls", "rg", "git status", "git diff"] },
+  "fetch": { "allow": ["api.github.com"] },
   "limits": { "timeoutMs": 60000, "maxHostCalls": 500 }
 }
 ```
@@ -210,11 +211,12 @@ How approvals reach the user, per client capability (`tests/fixtures/drive-mcp.m
 
 The full threat model, what isn't defended against, and how to report a vulnerability are in [SECURITY.md](SECURITY.md).
 
-- **The guest can't reach anything.** The wasm module imports exactly two functions: `modebox.emit` (events to the host) and a clock. There's no WASI at all, so no files, sockets, env or randomness except what the host seeds. `fetch`, `require`, `process` and `import()` don't exist.
+- **The guest can't reach anything.** The wasm module imports exactly two functions: `modebox.emit` (events to the host) and a clock. There's no WASI at all, so no files, sockets, env or randomness except what the host seeds. `require`, `process` and `import()` don't exist. `fetch` exists only if the host enables it (below).
 - **The only authority is your tools.** The host validates every call name against the toolbox. Arguments and results are size-limited and depth-limited, with cycle detection.
 - **Defense in depth.** A memory-safety bug in QuickJS stays inside wasm linear memory, behind wasmtime guard pages, Cranelift bounds checks, and a per-instance memory cap.
 - **Tokens.** They are XChaCha20-Poly1305 sealed, so they're confidential and tamper-proof, and they expire. The `modebox` CLI and MCP server seal them with `$MODEBOX_SECRET`, or else with a key generated on first use and saved at `~/.config/modebox/secret` (owner-only), so they still open after a restart. Library users choose their own key (`EngineConfig::secret`); without one, tokens only open in the process that made them. Each is bound to the exact engine image (a hash of the base memory) and to a hash of the tool set. They're single-use. The CLI and MCP server record used tokens under `~/.local/state/modebox/continuations` (or `$MODEBOX_STATE_DIR`), so that holds across processes too. Library users get an in-memory record by default. Processes that resume each other's tokens should share a `StoreContinuations` over any store with atomic create, such as a directory or a GCS/Azure bucket (`continuationsDir` in Node).
 - **Resumes can't widen limits.** The limits are sealed into the token.
+- **`fetch()` goes through the host.** With `"fetch"` in `modebox.json`, `fetch`, `Request`, `Response` and `Headers` work as in browsers. The host makes each request: listed hosts go through, others ask for approval (or are refused with `"askForOthers": false`). Names are resolved and checked by the host, so only exact entries can reach private addresses, and redirects stay within reach. Responses are capped (8 MiB by default). Embedders can provide their own `$fetch` tool instead; the contract is in `crates/modebox-core/src/fetch.rs`.
 - **`sh()` runs under Seatbelt or bubblewrap.** On Linux, a seccomp filter also refuses syscalls commands don't need, such as creating namespaces, mounting, `ptrace`, BPF and io_uring. Writes are allowed only under the workspace and temp dirs. `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.docker`, `~/.config/gh` and `.netrc` can't be read. Network is off by default. It can be fully on, or limited to listed hosts through a proxy on the host. That proxy resolves names itself, and only exact entries may reach private addresses. On Linux, a bridge inside the sandbox's network namespace forwards to it. The environment is scrubbed, and the whole process group is killed on timeout.
 
 ## Limitations and roadmap

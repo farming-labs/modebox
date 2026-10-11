@@ -31,6 +31,8 @@
 mod continuations;
 mod dts;
 mod engine;
+#[cfg(feature = "fetch")]
+pub mod fetch;
 mod run;
 mod session;
 pub mod net;

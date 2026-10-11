@@ -11,7 +11,7 @@ name = "modebox"
 path = "src/main.rs"
 
 [dependencies]
-modebox-core = { workspace = true, features = ["cloud"] }
+modebox-core = { workspace = true, features = ["cloud", "fetch"] }
 anyhow.workspace = true
 blake3.workspace = true
 serde.workspace = true
