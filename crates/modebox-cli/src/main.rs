@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use modebox_core::shell::{ShellPolicy, sandbox_kind, shell_tool};
+use modebox_core::shell::{ShellPolicy, sandbox_status, shell_tool};
 use modebox_core::{
     Call, ClockMode, Engine, EngineConfig, Event, Outcome, Resolution, RunOptions, RunResult, Value, declarations,
 };
@@ -166,8 +166,8 @@ async fn real_main() -> Result<()> {
             Ok(())
         }
         Cmd::Sh { root, network, writable, timeout_ms, command } => {
-            if sandbox_kind().is_none() {
-                bail!("no OS sandbox available here (needs macOS sandbox-exec or Linux bwrap)");
+            if let Err(why) = sandbox_status() {
+                bail!("no OS sandbox is available: {why}");
             }
             let mut policy = ShellPolicy::new(root.unwrap_or_else(|| cfg.workspace()));
             policy.network = network || cfg.shell.network;

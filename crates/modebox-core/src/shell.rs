@@ -10,6 +10,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -61,13 +62,82 @@ impl ShellPolicy {
 
 /// Which OS mechanism will confine commands on this machine, if any.
 pub fn sandbox_kind() -> Option<&'static str> {
-    if cfg!(target_os = "macos") && Path::new("/usr/bin/sandbox-exec").exists() {
-        Some("seatbelt")
-    } else if cfg!(target_os = "linux") && which("bwrap").is_some() {
-        Some("bubblewrap")
-    } else {
-        None
+    sandbox_status().ok()
+}
+
+/// The sandbox in use, or why there is none. Probed once per process by
+/// starting a trivial confined command, so a sandbox that is installed but
+/// can't start (no user namespaces, already inside a sandbox) is reported
+/// here rather than on every command.
+pub fn sandbox_status() -> Result<&'static str, String> {
+    sandbox().as_ref().map(|s| s.kind.name()).map_err(Clone::clone)
+}
+
+struct Sandbox {
+    kind: Kind,
+    bin: PathBuf,
+}
+
+#[derive(Clone, Copy)]
+enum Kind {
+    Seatbelt,
+    Bubblewrap,
+}
+
+impl Kind {
+    fn name(self) -> &'static str {
+        match self {
+            Kind::Seatbelt => "seatbelt",
+            Kind::Bubblewrap => "bubblewrap",
+        }
     }
+}
+
+fn sandbox() -> &'static Result<Sandbox, String> {
+    static SANDBOX: OnceLock<Result<Sandbox, String>> = OnceLock::new();
+    SANDBOX.get_or_init(probe)
+}
+
+fn probe() -> Result<Sandbox, String> {
+    if cfg!(target_os = "macos") {
+        let bin = PathBuf::from("/usr/bin/sandbox-exec");
+        if !bin.exists() {
+            return Err("macOS sandbox-exec was not found at /usr/bin/sandbox-exec".into());
+        }
+        // The real base profile: inside another sandbox only trivial profiles apply.
+        try_start(&bin, &["-p", SEATBELT_BASE, "/usr/bin/true"])
+            .map_err(|e| format!("sandbox-exec can't start a sandbox here ({e}); modebox may already be running inside one"))?;
+        Ok(Sandbox { kind: Kind::Seatbelt, bin })
+    } else if cfg!(target_os = "linux") {
+        let bin = which("bwrap").ok_or("bubblewrap (bwrap) is not installed; install the bubblewrap package")?;
+        try_start(&bin, &["--ro-bind", "/", "/", "--unshare-pid", "--unshare-net", "--die-with-parent", "--", "/bin/true"])
+            .map_err(|e| {
+                format!(
+                    "bubblewrap is installed but can't create a sandbox ({e}). It needs unprivileged user namespaces: \
+                     Ubuntu 23.10 and later block them unless bwrap has an AppArmor profile that allows `userns` \
+                     (see \"Linux\" in the modebox README), and some containers disable them entirely"
+                )
+            })?;
+        Ok(Sandbox { kind: Kind::Bubblewrap, bin })
+    } else {
+        Err("no OS sandbox is supported on this platform (needs macOS Seatbelt or Linux bubblewrap)".into())
+    }
+}
+
+/// Run a sandbox binary once; Err holds its stderr (or the spawn error) when it fails.
+fn try_start(bin: &Path, args: &[&str]) -> Result<(), String> {
+    let out = std::process::Command::new(bin)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| e.to_string())?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+    Err(if stderr.is_empty() { out.status.to_string() } else { stderr })
 }
 
 fn which(bin: &str) -> Option<PathBuf> {
@@ -226,10 +296,10 @@ fn confine(policy: &ShellPolicy, root: &Path, cwd: &Path, command: &str) -> Resu
     writable.extend(policy.writable.iter().map(|p| canon(p)));
     let deny: Vec<PathBuf> = policy.deny_read.iter().map(|p| canon(p)).collect();
 
-    match sandbox_kind() {
-        Some("seatbelt") => {
+    match sandbox() {
+        Ok(Sandbox { kind: Kind::Seatbelt, bin }) => {
             let mut profile = String::from(SEATBELT_BASE);
-            let mut cmd = Command::new("/usr/bin/sandbox-exec");
+            let mut cmd = Command::new(bin);
             let mut params = Vec::new();
             profile.push_str("(allow file-write*\n");
             for (i, w) in writable.iter().enumerate() {
@@ -255,8 +325,8 @@ fn confine(policy: &ShellPolicy, root: &Path, cwd: &Path, command: &str) -> Resu
             cmd.arg("/bin/sh").arg("-c").arg(command);
             Ok(cmd)
         }
-        Some("bubblewrap") => {
-            let mut cmd = Command::new(which("bwrap").unwrap());
+        Ok(Sandbox { kind: Kind::Bubblewrap, bin }) => {
+            let mut cmd = Command::new(bin);
             cmd.args(["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]);
             for w in &writable {
                 if w.exists() {
@@ -282,10 +352,7 @@ fn confine(policy: &ShellPolicy, root: &Path, cwd: &Path, command: &str) -> Resu
             cmd.arg("-c").arg(command);
             Ok(cmd)
         }
-        _ => Err(ToolError::new(
-            "sh: no OS sandbox is available on this machine (needs macOS sandbox-exec or Linux bwrap)",
-        )
-        .with_code("ENOSYS")),
+        Err(why) => Err(ToolError::new(format!("sh: no OS sandbox is available: {why}")).with_code("ENOSYS")),
     }
 }
 
