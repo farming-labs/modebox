@@ -4,6 +4,8 @@ Notable changes to modebox. The format follows [Keep a Changelog](https://keepac
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-11
+
 The first release.
 
 modebox runs untrusted, agent-written JavaScript and TypeScript in a WebAssembly sandbox whose only authority is the functions you give it. It plugs into agent harnesses as "code mode" over MCP. Paused runs are sealed into encrypted continuation tokens that resume later, even in another process, without running anything twice.
