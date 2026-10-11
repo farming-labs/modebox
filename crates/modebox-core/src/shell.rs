@@ -11,12 +11,13 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
 
+use crate::net::{BRIDGE_PORT, HostAllow, Proxy, ProxyAddr};
 use crate::tools::{Call, Tool, ToolError};
 use crate::value::Value;
 
@@ -28,7 +29,18 @@ pub struct ShellPolicy {
     pub writable: Vec<PathBuf>,
     /// Directories that can't even be read (defaults cover common secret stores).
     pub deny_read: Vec<PathBuf>,
+    /// Full network access.
     pub network: bool,
+    /// With `network` off, still reach these hosts (`example.com`,
+    /// `*.example.com`, see [`HostAllow`]) through a proxy the host runs.
+    /// Commands find it through the standard proxy variables (`HTTPS_PROXY`
+    /// and friends); programs that ignore those get no network at all.
+    pub allow_hosts: Vec<String>,
+    /// Linux only, needed for `allow_hosts`: a program that runs
+    /// [`crate::net::net_bridge_main`] when called as `<program>
+    /// __net-bridge ...`, bridging the sandbox's isolated network to the
+    /// proxy. The `modebox` binary is one.
+    pub net_bridge: Option<PathBuf>,
     pub timeout: Duration,
     pub max_output_bytes: usize,
     /// Environment variables passed through from the host, besides the basics.
@@ -53,6 +65,8 @@ impl ShellPolicy {
             writable: Vec::new(),
             deny_read,
             network: false,
+            allow_hosts: Vec::new(),
+            net_bridge: None,
             timeout: Duration::from_secs(60),
             max_output_bytes: 256 << 10,
             pass_env: Vec::new(),
@@ -154,14 +168,22 @@ fn which(bin: &str) -> Option<PathBuf> {
 /// `sh(command)` / `sh({ command, cwd?, timeoutMs?, stdin? })` →
 /// `{ stdout, stderr, exitCode, timedOut, truncated }`.
 pub fn shell_tool(name: &str, policy: ShellPolicy) -> Tool {
+    let network = if policy.network {
+        "allowed".to_owned()
+    } else if policy.allow_hosts.is_empty() {
+        "blocked".to_owned()
+    } else {
+        format!("limited to {} (through HTTPS_PROXY)", policy.allow_hosts.join(", "))
+    };
     let description = format!(
-        "Run a shell command in an OS sandbox ({}). Writes are limited to the workspace and temp dirs; network is {}. Returns {{ stdout, stderr, exitCode, timedOut, truncated }}.",
+        "Run a shell command in an OS sandbox ({}). Writes are limited to the workspace and temp dirs; network is {network}. Returns {{ stdout, stderr, exitCode, timedOut, truncated }}.",
         sandbox_kind().unwrap_or("none available"),
-        if policy.network { "allowed" } else { "blocked" },
     );
+    // One proxy per tool, started on first use.
+    let proxy: Arc<tokio::sync::OnceCell<Proxy>> = Arc::default();
     Tool::new(name, move |call: Call| {
-        let policy = policy.clone();
-        async move { run_command(&policy, &call).await }
+        let (policy, proxy) = (policy.clone(), proxy.clone());
+        async move { run_command(&policy, &call, &proxy).await }
     })
     .description(description)
     .input_schema(serde_json::json!({
@@ -193,7 +215,7 @@ pub fn command_of(call: &Call) -> Option<&str> {
     }
 }
 
-async fn run_command(policy: &ShellPolicy, call: &Call) -> Result<Value, ToolError> {
+async fn run_command(policy: &ShellPolicy, call: &Call, proxy: &tokio::sync::OnceCell<Proxy>) -> Result<Value, ToolError> {
     let input = call.input();
     let command = command_of(call).ok_or_else(|| ToolError::new("sh: expected a command string").with_name("TypeError"))?;
     let root = policy.root.canonicalize().map_err(|e| ToolError::new(format!("sh: workspace root: {e}")))?;
@@ -214,8 +236,13 @@ async fn run_command(policy: &ShellPolicy, call: &Call) -> Result<Value, ToolErr
         .unwrap_or(policy.timeout);
     let stdin = input.get("stdin").and_then(Value::as_str).map(str::to_owned);
 
+    let net = if !policy.network && !policy.allow_hosts.is_empty() {
+        Some(&proxy.get_or_try_init(|| start_proxy(policy)).await.map_err(|e| ToolError::new(format!("sh: network proxy: {e}")))?.addr)
+    } else {
+        None
+    };
     // `_keep` holds anything the sandbox reads at startup (the seccomp filter).
-    let (mut cmd, _keep) = confine(policy, &root, &cwd, command)?;
+    let (mut cmd, _keep) = confine(policy, &root, &cwd, command, net)?;
     cmd.current_dir(&cwd)
         .env_clear()
         .stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
@@ -230,6 +257,18 @@ async fn run_command(policy: &ShellPolicy, call: &Call) -> Result<Value, ToolErr
         }
     }
     cmd.env("TERM", "dumb").env("TMPDIR", std::env::temp_dir()).env("MODEBOX_SANDBOX", sandbox_kind().unwrap_or("none"));
+    if let Some(addr) = net {
+        let port = match addr {
+            ProxyAddr::Tcp(port) => *port,
+            ProxyAddr::Unix(_) => BRIDGE_PORT,
+        };
+        let url = format!("http://127.0.0.1:{port}");
+        for var in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"] {
+            cmd.env(var, &url);
+        }
+        // Nothing bypasses the proxy, localhost included.
+        cmd.env("NO_PROXY", "").env("no_proxy", "");
+    }
 
     let mut child = cmd.spawn().map_err(|e| ToolError::new(format!("sh: failed to start: {e}")))?;
     if let (Some(data), Some(mut pipe)) = (stdin, child.stdin.take()) {
@@ -301,7 +340,27 @@ fn canon(p: &Path) -> PathBuf {
 /// What a confined command needs kept open until it has started.
 type Keep = Option<std::io::PipeReader>;
 
-fn confine(policy: &ShellPolicy, root: &Path, cwd: &Path, command: &str) -> Result<(Command, Keep), ToolError> {
+/// The proxy for `allow_hosts`: on a loopback port for Seatbelt to allow,
+/// or on a Unix socket for the Linux bridge to reach.
+async fn start_proxy(policy: &ShellPolicy) -> std::io::Result<Proxy> {
+    let allow = HostAllow::new(&policy.allow_hosts);
+    match sandbox_kind() {
+        #[cfg(unix)]
+        Some("bubblewrap") => {
+            let path = std::env::temp_dir().join(format!("modebox-proxy-{}-{:08x}.sock", std::process::id(), rand::random::<u32>()));
+            Proxy::unix(allow, &path).await
+        }
+        _ => Proxy::tcp(allow).await,
+    }
+}
+
+fn confine(
+    policy: &ShellPolicy,
+    root: &Path,
+    cwd: &Path,
+    command: &str,
+    net: Option<&ProxyAddr>,
+) -> Result<(Command, Keep), ToolError> {
     let tmp = canon(&std::env::temp_dir());
     let mut writable = vec![root.to_path_buf(), tmp.clone(), canon(Path::new("/tmp"))];
     writable.extend(policy.writable.iter().map(|p| canon(p)));
@@ -328,6 +387,8 @@ fn confine(policy: &ShellPolicy, root: &Path, cwd: &Path, command: &str) -> Resu
             }
             if policy.network {
                 profile.push_str(SEATBELT_NETWORK);
+            } else if let Some(ProxyAddr::Tcp(port)) = net {
+                profile.push_str(&format!("(allow network-outbound (remote ip \"localhost:{port}\"))\n"));
             }
             cmd.arg("-p").arg(profile);
             for (k, v) in params {
@@ -359,7 +420,14 @@ fn confine(policy: &ShellPolicy, root: &Path, cwd: &Path, command: &str) -> Resu
             let keep = seccomp::attach(cmd.as_std_mut()).map_err(|e| ToolError::new(format!("sh: {e}")))?;
             #[cfg(not(target_os = "linux"))]
             let keep = None;
-            cmd.arg("--chdir").arg(cwd).args(["--", "/bin/sh", "-c", command]);
+            cmd.arg("--chdir").arg(cwd).arg("--");
+            if let Some(ProxyAddr::Unix(socket)) = net {
+                let bridge = policy.net_bridge.as_ref().ok_or_else(|| {
+                    ToolError::new("sh: limiting the network to some hosts needs a bridge program on Linux (ShellPolicy::net_bridge; the modebox binary is one)")
+                })?;
+                cmd.arg(bridge).arg("__net-bridge").arg(socket).arg("--");
+            }
+            cmd.args(["/bin/sh", "-c", command]);
             Ok((cmd, keep))
         }
         _ if policy.allow_unsandboxed => {

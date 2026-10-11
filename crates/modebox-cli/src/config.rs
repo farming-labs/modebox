@@ -60,8 +60,10 @@ pub struct ServerConfig {
 pub struct ShellConfig {
     #[serde(default = "yes")]
     pub enabled: bool,
+    /// `true` for full network access, or the hosts to allow (`"github.com"`,
+    /// `"*.npmjs.org"`) through a proxy.
     #[serde(default)]
-    pub network: bool,
+    pub network: Network,
     #[serde(default)]
     pub writable: Vec<PathBuf>,
     pub timeout_ms: Option<u64>,
@@ -79,6 +81,32 @@ fn yes() -> bool {
     true
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum Network {
+    All(bool),
+    Hosts(Vec<String>),
+}
+
+impl Default for Network {
+    fn default() -> Self {
+        Network::All(false)
+    }
+}
+
+impl Network {
+    pub fn all(&self) -> bool {
+        matches!(self, Network::All(true))
+    }
+
+    pub fn hosts(&self) -> &[String] {
+        match self {
+            Network::Hosts(h) => h,
+            Network::All(_) => &[],
+        }
+    }
+}
+
 fn default_allow() -> Vec<String> {
     [
         "ls", "cat", "head", "tail", "wc", "pwd", "echo", "grep", "rg", "find", "file", "stat", "du", "tree", "sort",
@@ -93,7 +121,7 @@ impl Default for ShellConfig {
     fn default() -> Self {
         ShellConfig {
             enabled: true,
-            network: false,
+            network: Network::default(),
             writable: Vec::new(),
             timeout_ms: None,
             allow: default_allow(),

@@ -74,6 +74,9 @@ enum Cmd {
         /// Allow network access
         #[arg(long)]
         network: bool,
+        /// Allow only this host (repeatable; `*.example.com` for subdomains)
+        #[arg(long = "allow-host", value_name = "HOST")]
+        allow_hosts: Vec<String>,
         /// Extra writable directory (repeatable)
         #[arg(long)]
         writable: Vec<PathBuf>,
@@ -86,6 +89,14 @@ enum Cmd {
 
 #[tokio::main]
 async fn main() {
+    // The sandbox runs this binary as its network bridge (see `ShellPolicy::net_bridge`).
+    #[cfg(unix)]
+    {
+        let args: Vec<String> = std::env::args().collect();
+        if args.get(1).map(String::as_str) == Some("__net-bridge") {
+            modebox_core::net::net_bridge_main(&args[2..]);
+        }
+    }
     if let Err(e) = real_main().await {
         eprintln!("modebox: {e:#}");
         std::process::exit(1);
@@ -167,12 +178,14 @@ async fn real_main() -> Result<()> {
             print!("{}", declarations(&bridge.tools));
             Ok(())
         }
-        Cmd::Sh { root, network, writable, timeout_ms, command } => {
+        Cmd::Sh { root, network, allow_hosts, writable, timeout_ms, command } => {
             if let Err(why) = sandbox_status() {
                 bail!("no OS sandbox is available: {why}");
             }
             let mut policy = ShellPolicy::new(root.unwrap_or_else(|| cfg.workspace()));
-            policy.network = network || cfg.shell.network;
+            policy.network = network || cfg.shell.network.all();
+            policy.allow_hosts = allow_hosts.into_iter().chain(cfg.shell.network.hosts().iter().cloned()).collect();
+            policy.net_bridge = std::env::current_exe().ok();
             policy.writable = writable;
             policy.timeout = Duration::from_millis(timeout_ms);
             policy.max_output_bytes = 16 << 20;

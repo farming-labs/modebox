@@ -21,7 +21,7 @@ rand = "0.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "process", "io-util", "io-std"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "process", "io-util", "io-std", "net"] }
 libc = "0.2"
 wasmtime = "44"
 wasmtime-wizer = { version = "44", features = ["wasmtime"] }
