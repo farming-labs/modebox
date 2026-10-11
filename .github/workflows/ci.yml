@@ -73,16 +73,27 @@ jobs:
           done
 
   msrv:
-    name: msrv (1.92)
+    name: msrv (1.96)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.92.0"
+          toolchain: "1.96.0"
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace --all-targets --locked
+
+  advisories:
+    name: security advisories
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      # RustSec advisories against anything in Cargo.lock fail the build.
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories
 
   guest:
     name: guest wasm is reproducible
