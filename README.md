@@ -178,7 +178,7 @@ await fs.commit({ message: 'rename oldApi' });                            // pau
 ```
 
 - **Mounts.** Configure them in `modebox.json` under `fs.mounts`, for example `{"datasets/": {"url": "s3://bucket/prefix", "readOnly": true}}`. Credentials are given as `$ENV` references and stay on the host.
-- **Jail.** `..` is rejected and symlinks are resolved and checked against the mount root. `.env*`, keys, `.git/` and similar are denied by default.
+- **Jail.** `..` is rejected, and symlinks are resolved and checked against the mount root. Files are then opened refusing any symlink, so a path swapped for one after the check fails instead of escaping. Writes replace files rather than editing them, so a hard link can't carry a write outside the root. `.env*`, keys, `.git/` and similar are denied by default.
 - **Staging.** Staged writes are content-addressed blobs, capped at 64 MiB of uncommitted changes (and 64 MiB for `tmp/`); past that, writes fail with `ENOSPC`. They're sealed into continuation tokens and saved sessions, so a run paused in one process and approved in another applies exactly what was staged.
 - **Commit.** Commits use conditional writes (`IfMatch` / `IfNotExists`). Anything that changed in its store since the code first read it is reported as a conflict instead of being overwritten.
 
