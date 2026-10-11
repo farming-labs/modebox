@@ -74,7 +74,7 @@ From Rust directly (`cargo run --release -p modebox-core --example bench`), a tr
 
 ```bash
 ./scripts/build-guest.sh                 # QuickJS → wasm (needs wasi-sdk; prebuilt .wasm is checked in)
-cargo build --release -p modebox-cli
+cargo build --release -p modebox
 ./target/release/modebox run -e 'const xs = [3, 1, 2]; xs.sort()'
 ./target/release/modebox -c modebox.example.json types     # TypeScript API the model sees
 ./target/release/modebox -c modebox.example.json run script.ts   # prompts y/N for approvals
@@ -235,7 +235,7 @@ Security-relevant gaps are listed under "Known limitations" in [SECURITY.md](SEC
 ```
 guest/                 QuickJS guest (wasm32-unknown-unknown): event loop, codec, prelude
 crates/modebox-core    engine, run loop, snapshots, sessions, tools, TS, d.ts, shell
-crates/modebox-cli     `modebox` binary: run / resume / sh / types / mcp
+crates/modebox-cli     the `modebox` crate and binary: run / resume / inspect / sh / types / mcp
 crates/modebox-node    napi-rs binding; packages/modebox is the JS API
 bench/                 compare.mjs (Run vs modebox), results
 tests/fixtures         notes-mcp.mjs (downstream MCP server), drive-mcp.mjs (harness simulator)
@@ -244,7 +244,7 @@ tests/fixtures         notes-mcp.mjs (downstream MCP server), drive-mcp.mjs (har
 ```bash
 cargo test --release --workspace                  # release: some tests assert timings
 cargo clippy --workspace --all-targets -- -D warnings
-cargo build --release -p modebox-cli -p modebox-node
+cargo build --release -p modebox -p modebox-node
 cp target/release/libmodebox_node.dylib packages/modebox/modebox.node   # .so on Linux
 (cd packages/modebox && npm test)
 node tests/fixtures/drive-mcp.mjs legacy|elicit|mrtr|deny

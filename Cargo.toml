@@ -8,9 +8,12 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.96"
 license = "MIT"
+repository = "https://github.com/farming-labs/modebox"
+homepage = "https://github.com/farming-labs/modebox"
+readme = "README.md"
 
 [workspace.dependencies]
-modebox-core = { path = "crates/modebox-core" }
+modebox-core = { path = "crates/modebox-core", version = "0.1.0" }
 anyhow = "1"
 base64 = "0.22"
 blake3 = "1"
