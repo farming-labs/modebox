@@ -33,6 +33,7 @@ mod dts;
 mod engine;
 mod run;
 mod session;
+pub mod net;
 pub mod shell;
 mod snapshot;
 pub mod store;

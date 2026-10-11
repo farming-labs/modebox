@@ -125,7 +125,9 @@ pub async fn build(cfg: &Config) -> Result<Bridge> {
             eprintln!("modebox: warning: shell is enabled but sh() will fail: {why}");
         }
         let mut policy = ShellPolicy::new(cfg.workspace());
-        policy.network = cfg.shell.network;
+        policy.network = cfg.shell.network.all();
+        policy.allow_hosts = cfg.shell.network.hosts().to_vec();
+        policy.net_bridge = std::env::current_exe().ok();
         policy.writable = cfg.shell.writable.clone();
         policy.pass_env = cfg.shell.pass_env.clone();
         if let Some(ms) = cfg.shell.timeout_ms {
