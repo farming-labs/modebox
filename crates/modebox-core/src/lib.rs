@@ -28,6 +28,7 @@
 //! # Ok(()) }
 //! ```
 
+mod continuations;
 mod dts;
 mod engine;
 mod run;
@@ -40,6 +41,7 @@ mod ts;
 mod value;
 pub mod vfs;
 
+pub use continuations::{ContinuationStore, MemoryContinuations, StoreContinuations};
 pub use dts::declarations;
 pub use engine::{Engine, EngineConfig};
 pub use run::{

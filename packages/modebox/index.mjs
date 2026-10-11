@@ -231,10 +231,15 @@ export class Runner {
    * @param {object} [config]
    * @param {string} [config.continuationSecret] key for sealing continuations (defaults to $MODEBOX_SECRET / $RUN_CONTINUATION_SECRET, else random per process)
    * @param {boolean} [config.metering] deterministic fuel accounting (default true)
+   * @param {string} [config.continuationsDir] directory recording used continuations, shared by every
+   *   process that resumes the same tokens (default: in memory, so single-use only within this process)
    */
   constructor(config = {}) {
     const secret = config.continuationSecret ?? process.env.MODEBOX_SECRET ?? process.env.RUN_CONTINUATION_SECRET;
-    this.#engine = native.createEngine(JSON.stringify({ secret, metering: config.metering, cacheDir: config.cacheDir, continuationTtlMs: config.continuationTtlMs }));
+    this.#engine = native.createEngine(JSON.stringify({
+      secret, metering: config.metering, cacheDir: config.cacheDir,
+      continuationTtlMs: config.continuationTtlMs, continuationsDir: config.continuationsDir,
+    }));
     this.#defaults = { limits: config.limits, approve: config.approve };
   }
 

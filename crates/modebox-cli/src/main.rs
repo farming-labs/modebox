@@ -13,7 +13,8 @@ use std::time::Duration;
 
 use modebox_core::shell::{ShellPolicy, sandbox_status, shell_tool};
 use modebox_core::{
-    Call, ClockMode, Engine, EngineConfig, Event, Outcome, Resolution, RunOptions, RunResult, Value, declarations,
+    Call, ClockMode, Engine, EngineConfig, Event, Outcome, Resolution, RunOptions, RunResult, StoreContinuations, Value,
+    declarations,
 };
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
@@ -197,7 +198,27 @@ fn engine() -> Result<Engine> {
     {
         cfg.secret = Some(secret::load_or_create(&path)?);
     }
+    // Tokens are resumed by other processes (`modebox resume`, MCP retries),
+    // so record used ones on disk rather than in this process's memory.
+    if let Some(dir) = continuations_dir() {
+        let used = StoreContinuations::local(&dir)
+            .map_err(anyhow::Error::msg)
+            .with_context(|| format!("opening {}", dir.display()))?;
+        cfg.continuations = Arc::new(used);
+    }
     Engine::with_config(cfg)
+}
+
+/// `$MODEBOX_STATE_DIR/continuations`, else under `$XDG_STATE_HOME/modebox`,
+/// else under `~/.local/state/modebox`.
+fn continuations_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("MODEBOX_STATE_DIR").map(PathBuf::from).or_else(|| {
+        std::env::var_os("XDG_STATE_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local").join("state")))
+            .map(|p| p.join("modebox"))
+    })?;
+    Some(base.join("continuations"))
 }
 
 fn ask(question: &str) -> Result<bool> {

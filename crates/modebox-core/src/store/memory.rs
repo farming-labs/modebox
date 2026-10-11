@@ -69,6 +69,7 @@ impl Store for MemoryStore {
         Capabilities {
             writable: !self.read_only,
             atomic_preconditions: true,
+            atomic_create: true,
             range_reads: true,
             server_side_copy: true,
             consistent_list: true,

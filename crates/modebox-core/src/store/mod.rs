@@ -163,6 +163,9 @@ pub struct Capabilities {
     /// Preconditions are enforced atomically (compare-and-swap). When false
     /// the backend checks and then writes, which a concurrent writer can race.
     pub atomic_preconditions: bool,
+    /// `IfNotExists` alone is atomic: of two writers creating the same key,
+    /// exactly one succeeds. Implied by `atomic_preconditions`.
+    pub atomic_create: bool,
     pub range_reads: bool,
     /// `copy` happens inside the backend (no download/upload).
     pub server_side_copy: bool,
@@ -178,6 +181,7 @@ impl Default for Capabilities {
         Capabilities {
             writable: true,
             atomic_preconditions: false,
+            atomic_create: false,
             range_reads: true,
             server_side_copy: false,
             consistent_list: true,

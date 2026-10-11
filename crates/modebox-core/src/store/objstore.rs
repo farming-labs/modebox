@@ -54,11 +54,13 @@ impl ObjectStoreAdapter {
             Arc::new(object_store::prefix::PrefixStore::new(store, prefix))
         };
         let scheme = parsed.scheme();
+        // S3 needs conditional-put support enabled on the bucket/endpoint;
+        // GCS, Azure and memory support it natively.
+        let atomic = matches!(scheme, "gs" | "az" | "azure" | "abfs" | "abfss" | "memory");
         let caps = Capabilities {
             writable: !read_only,
-            // S3 needs conditional-put support enabled on the bucket/endpoint;
-            // GCS, Azure and memory support it natively.
-            atomic_preconditions: matches!(scheme, "gs" | "az" | "azure" | "abfs" | "abfss" | "memory"),
+            atomic_preconditions: atomic,
+            atomic_create: atomic,
             range_reads: true,
             server_side_copy: scheme != "http" && scheme != "https",
             consistent_list: true,

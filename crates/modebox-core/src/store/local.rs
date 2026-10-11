@@ -255,6 +255,8 @@ impl Store for LocalStore {
         Capabilities {
             writable: self.opts.writable,
             atomic_preconditions: false,
+            // Creates go through hard_link, which fails if the name exists.
+            atomic_create: true,
             range_reads: true,
             server_side_copy: false,
             consistent_list: true,

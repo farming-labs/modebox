@@ -90,11 +90,11 @@ The Rust trait is in `crates/modebox-core/src/store/mod.rs`; the summary:
 **Capabilities.** Backends report what they can do, so the layers above adapt instead of assuming:
 
 ```rust
-Capabilities { writable, atomic_preconditions, range_reads, server_side_copy,
-               consistent_list, content_etags, max_object_size }
+Capabilities { writable, atomic_preconditions, atomic_create, range_reads,
+               server_side_copy, consistent_list, content_etags, max_object_size }
 ```
 
-`atomic_preconditions: false` doesn't mean preconditions are ignored. It means the backend checks and then writes, so a concurrent writer could slip in between. The contract still requires every precondition to be honored when there's no race.
+`atomic_preconditions: false` doesn't mean preconditions are ignored. It means the backend checks and then writes, so a concurrent writer could slip in between. The contract still requires every precondition to be honored when there's no race. `atomic_create` covers just `IfNotExists`: a local directory creates with a hard link, so creates are atomic even though its `IfMatch` isn't. Single-use continuation tracking (`StoreContinuations`) needs it.
 
 ## 4. Guarantees, honestly
 
