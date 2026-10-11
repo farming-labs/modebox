@@ -251,7 +251,7 @@ node tests/fixtures/drive-mcp.mjs legacy|elicit|mrtr|deny
 node bench/compare.mjs run && node bench/compare.mjs modebox
 ```
 
-CI (`.github/workflows/ci.yml`) runs these on Linux and macOS, checks the workspace builds on Rust 1.92, and rebuilds the guest to confirm the committed wasm matches byte for byte.
+CI (`.github/workflows/ci.yml`) runs these on Linux and macOS, checks the workspace builds on Rust 1.96 (the minimum), fails on RustSec advisories against any dependency, and rebuilds the guest to confirm the committed wasm matches byte for byte.
 
 ## License
 

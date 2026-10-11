@@ -6,7 +6,7 @@ exclude = ["guest"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.92"
+rust-version = "1.96"
 license = "MIT"
 
 [workspace.dependencies]
@@ -23,8 +23,8 @@ serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "process", "io-util", "io-std", "net"] }
 libc = "0.2"
-wasmtime = "44"
-wasmtime-wizer = { version = "44", features = ["wasmtime"] }
+wasmtime = "49"
+wasmtime-wizer = { version = "49", features = ["wasmtime"] }
 zstd = "0.13"
 
 [profile.release]
