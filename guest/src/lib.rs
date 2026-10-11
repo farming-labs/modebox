@@ -21,7 +21,7 @@ use rand_chacha::ChaCha8Rng;
 use rand_core::{RngCore, SeedableRng};
 use rquickjs::context::EvalOptions;
 use rquickjs::function::{Opt, Rest};
-use rquickjs::{qjs, Array, Context, Ctx, Function, Object, Persistent, Runtime, TypedArray, Value};
+use rquickjs::{qjs, Array, Context, Ctx, FromJs, Function, Object, Persistent, Runtime, TypedArray, Value};
 use serde_json::value::RawValue;
 use serde_json::Value as Json;
 
@@ -359,6 +359,77 @@ fn natives<'js>(ctx: &Ctx<'js>) -> rquickjs::Result<Object<'js>> {
             rquickjs::String::from_str(ctx, &encoded)
         })?,
     )?;
+    // WHATWG URL parsing for the prelude's URL and URLSearchParams.
+    al.set(
+        "urlParse",
+        Function::new(ctx.clone(), |ctx: Ctx<'js>, input: Value<'js>, base: Opt<Value<'js>>| -> rquickjs::Result<Value<'js>> {
+            let input = url_text(&ctx, &input)?;
+            let parsed = match base.0.filter(|b| !b.is_undefined()) {
+                Some(b) => url::Url::parse(&url_text(&ctx, &b)?).and_then(|b| b.join(&input)),
+                None => url::Url::parse(&input),
+            };
+            match parsed {
+                Ok(u) => url_record(&ctx, &u),
+                Err(_) => Ok(Value::new_null(ctx)),
+            }
+        })?,
+    )?;
+    al.set(
+        "urlSet",
+        Function::new(ctx.clone(), |ctx: Ctx<'js>, href: Value<'js>, part: String, value: Value<'js>| -> rquickjs::Result<Value<'js>> {
+            use url::quirks as q;
+            let Ok(mut u) = url::Url::parse(&url_text(&ctx, &href)?) else { return Ok(Value::new_null(ctx)) };
+            let v = url_text(&ctx, &value)?;
+            // Setters ignore values they can't apply, as the URL standard says.
+            let _ = match part.as_str() {
+                "protocol" => q::set_protocol(&mut u, &v),
+                "username" => q::set_username(&mut u, &v),
+                "password" => q::set_password(&mut u, &v),
+                "host" => q::set_host(&mut u, &v),
+                "hostname" => q::set_hostname(&mut u, &v),
+                "port" => q::set_port(&mut u, &v),
+                "pathname" => Ok(q::set_pathname(&mut u, &v)),
+                "search" => Ok(q::set_search(&mut u, &v)),
+                "hash" => Ok(q::set_hash(&mut u, &v)),
+                _ => Err(()),
+            };
+            url_record(&ctx, &u)
+        })?,
+    )?;
+    al.set(
+        "formParse",
+        Function::new(ctx.clone(), |ctx: Ctx<'js>, input: Value<'js>| -> rquickjs::Result<Array<'js>> {
+            let input = url_text(&ctx, &input)?;
+            let out = Array::new(ctx.clone())?;
+            for (i, (k, v)) in url::form_urlencoded::parse(input.as_bytes()).enumerate() {
+                let pair = Array::new(ctx.clone())?;
+                pair.set(0, k.as_ref())?;
+                pair.set(1, v.as_ref())?;
+                out.set(i, pair)?;
+            }
+            Ok(out)
+        })?,
+    )?;
+    al.set(
+        "formSerialize",
+        Function::new(ctx.clone(), |ctx: Ctx<'js>, pairs: Array<'js>| -> rquickjs::Result<String> {
+            use url::form_urlencoded::byte_serialize;
+            let mut out = String::new();
+            for i in 0..codec::length(&ctx, &pairs) {
+                let pair: Array = pairs.get(i)?;
+                if i > 0 {
+                    out.push('&');
+                }
+                out.extend(byte_serialize(url_text(&ctx, &pair.get(0)?)?.as_bytes()));
+                out.push('=');
+                out.extend(byte_serialize(url_text(&ctx, &pair.get(1)?)?.as_bytes()));
+                if out.len() > MAX_URL {
+                    return Err(throw_range(&ctx, "URLSearchParams: too large to serialize"));
+                }
+            }
+            Ok(out)
+        })?,
+    )?;
     al.set(
         "clone",
         Function::new(ctx.clone(), |ctx: Ctx<'js>, v: Value<'js>| -> rquickjs::Result<Value<'js>> {
@@ -376,6 +447,50 @@ fn natives<'js>(ctx: &Ctx<'js>) -> rquickjs::Result<Object<'js>> {
         })?,
     )?;
     Ok(al)
+}
+
+/// Longest URL or query string handled; longer ones are refused, which keeps
+/// the parser's copies small. Browsers stop at 2 MiB as well.
+const MAX_URL: usize = 2 << 20;
+
+/// A string argument of a URL function as UTF-8, with unpaired surrogates as
+/// U+FFFD (as URL parsing treats them). Refuses anything over `MAX_URL`.
+fn url_text<'js>(ctx: &Ctx<'js>, v: &Value<'js>) -> rquickjs::Result<String> {
+    let too_long = |ctx: &Ctx<'js>| throw_range(ctx, "URL: input is longer than 2 MiB");
+    let s = match v.as_string() {
+        Some(s) => s.clone(),
+        None => rquickjs::Coerced::<rquickjs::String>::from_js(ctx, v.clone())?.0,
+    };
+    let c = s.to_cstring().map_err(|_| {
+        let _ = ctx.catch();
+        too_long(ctx)
+    })?;
+    if c.len() > MAX_URL {
+        return Err(too_long(ctx));
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(c.as_ptr() as *const u8, c.len()) };
+    match std::str::from_utf8(bytes) {
+        Ok(s) => Ok(s.to_owned()),
+        Err(_) => replace_surrogates(bytes).ok_or_else(|| too_long(ctx)),
+    }
+}
+
+/// The URL's components, as the prelude's URL getters return them.
+fn url_record<'js>(ctx: &Ctx<'js>, u: &url::Url) -> rquickjs::Result<Value<'js>> {
+    use url::quirks as q;
+    let o = Object::new(ctx.clone())?;
+    o.set("href", q::href(u))?;
+    o.set("origin", q::origin(u))?;
+    o.set("protocol", q::protocol(u))?;
+    o.set("username", q::username(u))?;
+    o.set("password", q::password(u))?;
+    o.set("host", q::host(u))?;
+    o.set("hostname", q::hostname(u))?;
+    o.set("port", q::port(u))?;
+    o.set("pathname", q::pathname(u))?;
+    o.set("search", q::search(u))?;
+    o.set("hash", q::hash(u))?;
+    Ok(o.into_value())
 }
 
 /// Throw a RangeError (for inputs too large to handle).

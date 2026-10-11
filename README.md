@@ -213,7 +213,7 @@ The full threat model, what isn't defended against, and how to report a vulnerab
 Security-relevant gaps are listed under "Known limitations" in [SECURITY.md](SECURITY.md).
 
 - **CPU-heavy JS:** QuickJS is an interpreter, so heavy computation is much slower than on V8. Next: an opt-in V8-isolate tier in a separate sandboxed process.
-- **Missing web APIs:** `Intl` and `URL` aren't available yet.
+- **Web APIs:** `URL` and `URLSearchParams` follow the WHATWG standard; the `url` crate parses them. There's no `Intl`. Dates are always UTC, with no local time zone. `toLocaleString()` and the other locale methods ignore the locale and format like en-US, numbers aren't grouped, and `localeCompare` compares UTF-16 code units.
 - **Shell sandbox platforms:** Seatbelt on macOS, and bubblewrap plus a seccomp filter on Linux. CI runs both on every change. Windows has no shell sandbox.
 - **Node binding:** built for darwin-arm64 only. Prebuilds per platform via `@napi-rs/cli` are TODO.
 - **Python:** a Monty or CPython-wasi guest would reuse the same snapshot and resume machinery.
