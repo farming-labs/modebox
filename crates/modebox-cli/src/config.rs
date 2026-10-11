@@ -29,6 +29,19 @@ pub struct Config {
     pub approve: Vec<String>,
     #[serde(default)]
     pub limits: LimitsConfig,
+    #[serde(default)]
+    pub mcp: McpConfig,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct McpConfig {
+    /// Offer the `approve` tool to clients that can't ask the user
+    /// themselves (no elicitation). The model calls that tool, so turn this
+    /// on only when the harness asks the user before every call to it, like
+    /// opencode with `"modebox_approve": "ask"`. Off: such calls are denied.
+    #[serde(default)]
+    pub approve_tool: bool,
 }
 
 #[derive(Debug, Deserialize)]

@@ -9,8 +9,10 @@
 //!    elicitation, with the sealed continuation as `requestState`. The server
 //!    keeps no state, and an approval can come back after a restart.
 //! 2. Clients that support elicitation: an inline elicitation prompt.
-//! 3. Others: the run pauses, and the `approve` tool resumes it. The
-//!    harness's own permission prompt for that tool is the user's decision.
+//! 3. Others: the calls are denied, since only the model could answer.
+//!    With `mcp.approveTool` on, the run pauses instead and the `approve`
+//!    tool resumes it; the harness's own permission prompt for that tool is
+//!    then the user's decision.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
@@ -19,7 +21,7 @@ use modebox_core::{Engine, Interrupt, Limits, Outcome, Resolution, RunOptions, R
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation, InitializeResult,
     InputRequest, InputRequiredResult, ListToolsResult, PaginatedRequestParams, ProtocolVersion, ServerCapabilities,
-    Tool as McpTool,
+    Tool as McpTool, ToolAnnotations,
 };
 use rmcp::service::{RequestContext, RoleServer};
 use rmcp::{ErrorData as McpError, ServerHandler, ServiceExt};
@@ -29,13 +31,17 @@ use serde_json::{Value as Json, json};
 const MAX_RESULT_CHARS: usize = 40_000;
 const MAX_DESCRIPTION_DECLS: usize = 16_000;
 
+/// What sandboxed code sees when a call is denied for lack of a prompt.
+const NO_PROMPT: &str = "this needs the user's approval, and this MCP client can't ask for it";
+
 pub struct ModeboxServer {
     tools: Arc<Toolbox>,
     /// One persistent VM per connection: state carries across `execute` calls.
     session: tokio::sync::Mutex<Session>,
     decls: String,
     pending: Mutex<HashMap<String, PendingRun>>,
-    has_approvals: bool,
+    /// Offer `approve` to clients that can't prompt (see `McpConfig`).
+    approve_tool: bool,
 }
 
 struct PendingRun {
@@ -51,7 +57,7 @@ struct ApprovalForm {
 rmcp::elicit_safe!(ApprovalForm);
 
 impl ModeboxServer {
-    pub fn new(engine: Engine, tools: Toolbox, limits: Limits, has_approvals: bool) -> Self {
+    pub fn new(engine: Engine, tools: Toolbox, limits: Limits, approve_tool: bool) -> Self {
         let decls = declarations(&tools);
         let opts = RunOptions { limits: limits.clone(), filename: "execute.ts".into(), ..RunOptions::default() };
         let session = tokio::sync::Mutex::new(engine.session(tools.clone(), opts));
@@ -60,7 +66,7 @@ impl ModeboxServer {
             tools: Arc::new(tools),
             decls,
             pending: Mutex::new(HashMap::new()),
-            has_approvals,
+            approve_tool,
         }
     }
 
@@ -141,10 +147,17 @@ and use Promise.all for independent calls.\n\
         mut r: RunResult,
         ctx: &RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, McpError> {
+        let mut denied: Vec<String> = Vec::new();
         loop {
             let s = match &r.outcome {
                 Outcome::Suspended(s) => s.clone(),
-                _ => return Ok(CallToolResponse::Complete(self.render(&r))),
+                _ => {
+                    let mut result = self.render(&r);
+                    if !denied.is_empty() {
+                        result.content.push(ContentBlock::text(no_prompt_note(&denied)));
+                    }
+                    return Ok(CallToolResponse::Complete(result));
+                }
             };
             if supports_mrtr(ctx) {
                 return Ok(CallToolResponse::InputRequired(mrtr_request(&s.interrupts, &s.continuation)));
@@ -161,6 +174,13 @@ and use Promise.all for independent calls.\n\
                 r = session.resume(&s.continuation, decisions).await;
                 continue;
             }
+            if !self.approve_tool {
+                // Nobody but the model could answer, so the answer is no.
+                denied.extend(s.interrupts.iter().map(describe));
+                let decisions = s.interrupts.iter().map(|i| (i.id, Resolution::Deny(NO_PROMPT.into()))).collect::<Vec<_>>();
+                r = session.resume(&s.continuation, decisions).await;
+                continue;
+            }
             let id = format!("run-{}", &short_hash(&s.continuation)[..10]);
             let listing: Vec<String> = s.interrupts.iter().map(|i| format!("- {}", describe(i))).collect();
             let msg = format!(
@@ -173,6 +193,17 @@ Ask the user. To continue, call the `approve` tool with {{\"id\": \"{id}\", \"ap
             return Ok(CallToolResponse::Complete(CallToolResult::success(vec![ContentBlock::text(msg)])));
         }
     }
+}
+
+fn no_prompt_note(denied: &[String]) -> String {
+    let list: Vec<String> = denied.iter().map(|d| format!("- {d}")).collect();
+    format!(
+        "modebox denied {} call(s) that need the user's approval, because this MCP client can't ask the user \
+(it doesn't support elicitation):\n{}\n\nIf the harness asks the user before each tool call, set \
+\"mcp\": {{ \"approveTool\": true }} in modebox.json: runs will pause and an `approve` tool will resume them.",
+        denied.len(),
+        list.join("\n")
+    )
 }
 
 fn short_hash(s: &str) -> String {
@@ -264,6 +295,9 @@ Use `execute` to batch tool calls and data processing into one step.",
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
+        // Hints for harnesses that decide which tools to allow without asking:
+        // `execute` can reach every configured tool, and `approve` releases
+        // whatever a run was paused on, so neither is safe to auto-allow.
         let mut tools = vec![
             McpTool::new(
                 "execute",
@@ -276,23 +310,41 @@ Use `execute` to batch tool calls and data processing into one step.",
                     },
                     "required": ["code"]
                 })),
+            )
+            .annotate(
+                ToolAnnotations::with_title("Run code in the modebox sandbox")
+                    .read_only(false)
+                    .destructive(true)
+                    .idempotent(false)
+                    .open_world(true),
             ),
             McpTool::new(
                 "types",
                 "Show TypeScript signatures of the sandbox APIs, optionally filtered by a search term.",
                 schema(json!({ "type": "object", "properties": { "query": { "type": "string" } } })),
-            ),
+            )
+            .annotate(ToolAnnotations::with_title("Show sandbox API types").read_only(true).open_world(false)),
         ];
-        if self.has_approvals {
-            tools.push(McpTool::new(
-                "approve",
-                "Continue a paused `execute` run after asking the user. Only call this with the user's explicit decision.",
-                schema(json!({
-                    "type": "object",
-                    "properties": { "id": { "type": "string" }, "approve": { "type": "boolean" } },
-                    "required": ["id", "approve"]
-                })),
-            ));
+        if self.approve_tool {
+            tools.push(
+                McpTool::new(
+                    "approve",
+                    "Continue a paused `execute` run with the user's decision. Ask the user first and pass exactly \
+what they said; never decide on their behalf.",
+                    schema(json!({
+                        "type": "object",
+                        "properties": { "id": { "type": "string" }, "approve": { "type": "boolean" } },
+                        "required": ["id", "approve"]
+                    })),
+                )
+                .annotate(
+                    ToolAnnotations::with_title("Approve a paused sandbox run")
+                        .read_only(false)
+                        .destructive(true)
+                        .idempotent(false)
+                        .open_world(true),
+                ),
+            );
         }
         Ok(ListToolsResult::with_all_items(tools))
     }
@@ -340,7 +392,7 @@ Use `execute` to batch tool calls and data processing into one step.",
                     text
                 })])))
             }
-            "approve" => {
+            "approve" if self.approve_tool => {
                 let id = args["id"].as_str().unwrap_or("");
                 let approve = args["approve"].as_bool().unwrap_or(false);
                 let Some(p) = self.pending.lock().unwrap().remove(id) else {
