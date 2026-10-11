@@ -204,6 +204,143 @@
   }
   hidden(g, 'URL', URL);
   hidden(g, 'URLSearchParams', URLSearchParams);
+
+  // -- fetch: requests made by the host's `$fetch` tool, under its policy ----
+  const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+  class Headers {
+    #map = new _Map(); // lowercased name -> value
+    constructor(init) {
+      if (init instanceof Headers) for (const [k, v] of init) this.append(k, v);
+      else if (init !== null && typeof init === 'object') {
+        if (typeof init[Symbol.iterator] === 'function') {
+          for (const pair of init) {
+            const kv = [...pair];
+            if (kv.length !== 2) throw new TypeError('Headers: each pair needs exactly a name and a value');
+            this.append(kv[0], kv[1]);
+          }
+        } else for (const k of Object.keys(init)) this.append(k, init[k]);
+      }
+    }
+    static #name(n) {
+      n = String(n);
+      if (!HEADER_NAME.test(n)) throw new TypeError(`Headers: invalid header name "${n}"`);
+      return n.toLowerCase();
+    }
+    static #value(v) {
+      v = String(v).replace(/^[\t\n\r ]+|[\t\n\r ]+$/g, '');
+      if (/[\0\r\n]/.test(v)) throw new TypeError('Headers: invalid header value');
+      return v;
+    }
+    append(n, v) { n = Headers.#name(n); v = Headers.#value(v); const e = this.#map.get(n); this.#map.set(n, e === undefined ? v : `${e}, ${v}`); }
+    set(n, v) { this.#map.set(Headers.#name(n), Headers.#value(v)); }
+    get(n) { const v = this.#map.get(Headers.#name(n)); return v === undefined ? null : v; }
+    has(n) { return this.#map.has(Headers.#name(n)); }
+    delete(n) { this.#map.delete(Headers.#name(n)); }
+    getSetCookie() { const v = this.#map.get('set-cookie'); return v === undefined ? [] : v.split(', '); }
+    *entries() { for (const k of [...this.#map.keys()].sort()) yield [k, this.#map.get(k)]; }
+    *keys() { for (const [k] of this.entries()) yield k; }
+    *values() { for (const [, v] of this.entries()) yield v; }
+    forEach(fn, thisArg) { for (const [k, v] of this.entries()) fn.call(thisArg, v, k, this); }
+    [Symbol.iterator]() { return this.entries(); }
+    get [Symbol.toStringTag]() { return 'Headers'; }
+  }
+
+  // Bodies are bytes; strings, URLSearchParams and JSON-ready values convert.
+  const toBody = (body, headers) => {
+    if (body === undefined || body === null) return null;
+    if (typeof body === 'string') {
+      if (!headers.has('content-type')) headers.set('content-type', 'text/plain;charset=UTF-8');
+      return al.utf8Encode(body);
+    }
+    if (body instanceof URLSearchParams) {
+      if (!headers.has('content-type')) headers.set('content-type', 'application/x-www-form-urlencoded;charset=UTF-8');
+      return al.utf8Encode(body.toString());
+    }
+    if (body instanceof _Uint8Array) return new _Uint8Array(body);
+    if (_isView(body)) return new _Uint8Array(bytesOf(body));
+    if (body instanceof ArrayBuffer) return new _Uint8Array(body.slice(0));
+    throw new TypeError('fetch: body must be a string, URLSearchParams, ArrayBuffer or typed array');
+  };
+
+  let bodyOf, setResponseMeta;
+  class Body {
+    #bytes;
+    #used = false;
+    static { bodyOf = (b) => b.#bytes; }
+    constructor(bytes) { this.#bytes = bytes; }
+    get bodyUsed() { return this.#used; }
+    #take() {
+      if (this.#used) throw new TypeError('Body has already been read');
+      this.#used = true;
+      return this.#bytes ?? new _Uint8Array(0);
+    }
+    async text() { return al.utf8Decode(this.#take(), false); }
+    async json() { return JSON.parse(await this.text()); }
+    async bytes() { return new _Uint8Array(this.#take()); }
+    async arrayBuffer() { const b = this.#take(); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); }
+  }
+
+  class Request extends Body {
+    constructor(input, init = {}) {
+      const from = input instanceof Request ? input : null;
+      const url = from ? from.url : new URL(String(input)).href;
+      const headers = new Headers(init.headers ?? from?.headers);
+      const method = String(init.method ?? from?.method ?? 'GET').toUpperCase();
+      const body = init.body !== undefined ? toBody(init.body, headers) : from ? bodyOf(from) : null;
+      if (body && (method === 'GET' || method === 'HEAD')) throw new TypeError(`fetch: a ${method} request can't have a body`);
+      super(body);
+      this.url = url;
+      this.method = method;
+      this.headers = headers;
+      this.redirect = init.redirect ?? from?.redirect ?? 'follow';
+    }
+    clone() { return new Request(this); }
+    get [Symbol.toStringTag]() { return 'Request'; }
+  }
+
+  class Response extends Body {
+    #meta = { url: '', redirected: false };
+    static { setResponseMeta = (r, meta) => { r.#meta = meta; }; }
+    constructor(body = null, init = {}) {
+      const headers = new Headers(init.headers);
+      super(toBody(body, headers));
+      this.status = init.status ?? 200;
+      if (!Number.isInteger(this.status) || this.status < 200 || this.status > 599) throw new RangeError(`Response: status ${this.status} is out of range`);
+      this.statusText = String(init.statusText ?? '');
+      this.headers = headers;
+      this.type = 'default';
+    }
+    get ok() { return this.status >= 200 && this.status < 300; }
+    get url() { return this.#meta.url; }
+    get redirected() { return this.#meta.redirected; }
+    clone() {
+      const r = new Response(bodyOf(this), { status: this.status, statusText: this.statusText, headers: this.headers });
+      setResponseMeta(r, this.#meta);
+      return r;
+    }
+    static json(data, init = {}) {
+      const headers = new Headers(init.headers);
+      if (!headers.has('content-type')) headers.set('content-type', 'application/json');
+      return new Response(JSON.stringify(data), { ...init, headers });
+    }
+    get [Symbol.toStringTag]() { return 'Response'; }
+  }
+
+  async function fetch(input, init) {
+    const req = new Request(input, init);
+    const body = bodyOf(req);
+    const res = await al.call('$fetch', [{ url: req.url, method: req.method, headers: [...req.headers], redirect: req.redirect, ...(body ? { body } : {}) }]);
+    const out = new Response(res.body, { headers: res.headers });
+    // The host's status may be one `new Response` refuses (a redirect, with redirect: 'manual').
+    Object.defineProperty(out, 'status', { value: res.status, enumerable: true });
+    out.statusText = res.statusText;
+    out.type = 'basic';
+    setResponseMeta(out, { url: res.url, redirected: res.redirected });
+    return out;
+  }
+  hidden(g, 'Headers', Headers);
+  hidden(g, 'Request', Request);
+  hidden(g, 'Response', Response);
   hidden(g, 'queueMicrotask', (fn) => { Promise.resolve().then(fn); });
 
   // -- timers: backed by the host's $sleep call (real or virtual time) -------
@@ -244,6 +381,12 @@
     for (const path of paths) {
       if (installed.has(path)) continue;
       installed.add(path);
+      // Host internals back built-ins rather than becoming globals; `fetch`
+      // only exists when the host provides `$fetch`.
+      if (path.startsWith('$')) {
+        if (path === '$fetch') hidden(g, 'fetch', fetch);
+        continue;
+      }
       const parts = path.split('.');
       let obj = g;
       for (let i = 0; i < parts.length - 1; i++) {

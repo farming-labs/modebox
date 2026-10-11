@@ -11,6 +11,8 @@ default = ["typescript", "object-store"]
 typescript = ["dep:swc_ts_fast_strip", "dep:swc_common", "dep:swc_ecma_parser", "dep:swc_ecma_ast"]
 # Adapter for any `object_store` backend (memory/local built in).
 object-store = ["dep:object_store", "dep:url"]
+# `fetch()` for sandboxed code, through a host tool limited to allowed hosts.
+fetch = ["dep:reqwest", "dep:url"]
 # S3 (+ R2, MinIO…), GCS, Azure and HTTP drivers.
 cloud = ["object-store", "object_store/aws", "object_store/gcp", "object_store/azure", "object_store/http"]
 
@@ -27,6 +29,7 @@ regex = "1"
 similar = "3"
 object_store = { version = "0.14", default-features = false, features = ["fs"], optional = true }
 url = { version = "2", optional = true }
+reqwest = { version = "0.13", default-features = false, features = ["rustls"], optional = true }
 indexmap.workspace = true
 libc.workspace = true
 rand.workspace = true

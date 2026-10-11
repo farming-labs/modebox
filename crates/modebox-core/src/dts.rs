@@ -12,7 +12,13 @@ const MAX_DEPTH: usize = 8;
 /// Render `declare` statements for every tool, grouped into namespaces.
 pub fn declarations(tools: &Toolbox) -> String {
     let mut root = Node::default();
+    let mut internal = false;
     for tool in tools.iter() {
+        // `$`-names are host internals behind built-ins (`$fetch` backs `fetch`).
+        if tool.name.starts_with('$') {
+            internal |= tool.name == "$fetch";
+            continue;
+        }
         let mut node = &mut root;
         let parts: Vec<&str> = tool.name.split('.').collect();
         for seg in &parts[..parts.len() - 1] {
@@ -22,6 +28,10 @@ pub fn declarations(tools: &Toolbox) -> String {
     }
 
     let mut out = String::new();
+    if internal {
+        out.push_str("/** Standard fetch(); requests go through the host, which allows some hosts and may ask about others. */\n");
+        out.push_str("declare function fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;\n");
+    }
     for (name, tool) in &root.fns {
         doc(&mut out, tool.description.as_deref(), "");
         out.push_str(&format!("declare function {name}{};\n", signature(tool)));

@@ -33,6 +33,21 @@ pub struct Config {
     pub mcp: McpConfig,
     #[serde(default)]
     pub flows: FlowsConfig,
+    /// `fetch()` for sandboxed code. Absent: no fetch.
+    pub fetch: Option<FetchConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FetchConfig {
+    /// Hosts fetched without asking: `"api.github.com"`, `"*.example.com"`, `"*"`.
+    #[serde(default)]
+    pub allow: Vec<String>,
+    /// Ask before fetching other hosts (default), or refuse them.
+    #[serde(default = "yes")]
+    pub ask_for_others: bool,
+    pub max_bytes: Option<usize>,
+    pub timeout_ms: Option<u64>,
 }
 
 /// Data-flow checks: once a run has called a source, calls to sinks need
