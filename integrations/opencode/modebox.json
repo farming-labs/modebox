@@ -1,0 +1,5 @@
+{
+  "mcpServers": {},
+  "shell": { "enabled": true, "network": false },
+  "mcp": { "approveTool": true }
+}

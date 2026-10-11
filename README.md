@@ -68,21 +68,35 @@ From Rust directly (`cargo run --release -p modebox-core --example bench`), a tr
 
 **Where it isn't faster:** CPU-bound JS. Both run the QuickJS bytecode interpreter compiled to wasm. Fuel metering costs about 10%; turn it off with `EngineConfig { metering: false }`. If heavy compute matters, a V8-isolate tier is the next step (see the roadmap).
 
+## Install
+
+modebox runs on macOS (arm64, x64) and Linux (x64, arm64, glibc). Windows isn't supported.
+
+```bash
+cargo install modebox      # the CLI and MCP server (needs Rust 1.96+)
+npm install modebox        # the Node API; the binding for your platform comes with it
+```
+
+Prebuilt CLI binaries for each platform, with SHA-256 checksums, are attached to every [GitHub release](https://github.com/farming-labs/modebox/releases). To build from source:
+
+```bash
+cargo build --release -p modebox      # ./target/release/modebox
+./scripts/build-guest.sh              # only if you change guest/: rebuilds the QuickJS wasm (needs wasi-sdk 24)
+```
+
 ## Quick start
 
 ### CLI
 
 ```bash
-./scripts/build-guest.sh                 # QuickJS → wasm (needs wasi-sdk; prebuilt .wasm is checked in)
-cargo build --release -p modebox
-./target/release/modebox run -e 'const xs = [3, 1, 2]; xs.sort()'
-./target/release/modebox -c modebox.example.json types     # TypeScript API the model sees
-./target/release/modebox -c modebox.example.json run script.ts   # prompts y/N for approvals
-./target/release/modebox run --json script.ts > paused.json         # or pause, then decide later:
-./target/release/modebox inspect "$(jq -r .continuation paused.json)"           # the pending calls
-./target/release/modebox resume "$(jq -r .continuation paused.json)" --approve-only 3   # approve call 3, deny the rest
-./target/release/modebox sh -- 'npm test'                  # one command in the OS sandbox
-./target/release/modebox -c modebox.json mcp               # MCP server (stdio)
+modebox run -e 'const xs = [3, 1, 2]; xs.sort()'
+modebox -c modebox.example.json types            # TypeScript API the model sees
+modebox -c modebox.example.json run script.ts    # prompts y/N for approvals
+modebox run --json script.ts > paused.json       # or pause, then decide later:
+modebox inspect "$(jq -r .continuation paused.json)"                   # the pending calls
+modebox resume "$(jq -r .continuation paused.json)" --approve-only 3   # approve call 3, deny the rest
+modebox sh -- 'npm test'                         # one command in the OS sandbox
+modebox -c modebox.json mcp                      # MCP server (stdio)
 ```
 
 `modebox.json` (`mcpServers` has the same shape as `.mcp.json`):
@@ -196,7 +210,8 @@ await fs.commit({ message: 'rename oldApi' });                            // pau
 
 **opencode**, in `integrations/opencode/`:
 - `opencode.json` adds the MCP server. MCP requests time out after 5 s by default, so the snippet raises the timeout. It also sets `"modebox_approve": "ask"`, because opencode allows every tool by default. That prompt is what makes it safe to turn on the `approve` tool with `"mcp": { "approveTool": true }` in `modebox.json`.
-- `.opencode/plugin/modebox-sandbox.ts` routes every built-in `bash` call through `modebox sh`. opencode has no OS sandbox of its own, and this adds one without changing how the agent works.
+- `modebox.json` is a starting config with the `approve` tool on for that setup. Add your MCP servers under `mcpServers`.
+- `.opencode/plugin/modebox-sandbox.ts` routes every built-in `bash` call through `modebox sh`. opencode has no OS sandbox of its own, and this adds one without changing how the agent works. Network stays off, unless `MODEBOX_NETWORK=1` turns it on fully or `MODEBOX_ALLOW_HOSTS=registry.npmjs.org,*.github.com` lists the hosts it may reach.
 
 **Claude Code**: `integrations/claude-code/.mcp.json`. **Codex**: `integrations/codex/config.toml`.
 
@@ -225,12 +240,13 @@ Security-relevant gaps are listed under "Known limitations" in [SECURITY.md](SEC
 
 - **CPU-heavy JS:** QuickJS is an interpreter, so heavy computation is much slower than on V8. Next: an opt-in V8-isolate tier in a separate sandboxed process.
 - **Web APIs:** `URL` and `URLSearchParams` follow the WHATWG standard; the `url` crate parses them. There's no `Intl`. Dates are always UTC, with no local time zone. `toLocaleString()` and the other locale methods ignore the locale and format like en-US, numbers aren't grouped, and `localeCompare` compares UTF-16 code units.
-- **Shell sandbox platforms:** Seatbelt on macOS, and bubblewrap plus a seccomp filter on Linux. CI runs both on every change. Windows has no shell sandbox.
-- **Node binding:** built for darwin-arm64 only. Prebuilds per platform via `@napi-rs/cli` are TODO.
+- **Platforms:** macOS (arm64, x64) and Linux (x64, arm64, glibc). The shell sandbox is Seatbelt on macOS and bubblewrap plus a seccomp filter on Linux, and CI runs both on every change. Windows and musl Linux aren't supported; for musl, build `crates/modebox-node` yourself and point `MODEBOX_NATIVE` at it.
 - **Python:** a Monty or CPython-wasi guest would reuse the same snapshot and resume machinery.
 - **Shared policy file:** one policy format that imports/exports opencode, Codex and Claude Code permission configs.
 
 ## Development
+
+Releases are cut by pushing a `vX.Y.Z` tag; see [docs/releasing.md](docs/releasing.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 ```
 guest/                 QuickJS guest (wasm32-unknown-unknown): event loop, codec, prelude
