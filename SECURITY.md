@@ -50,8 +50,8 @@ These are known gaps. Reports that show how they can be exploited in practice ar
   - Nothing yet tracks data flow between tools. Require approval for tools that send data out of your trust boundary.
 - **Approvals are only as good as the approver.**
   - The prompt shows the call and its arguments. Someone has to read them.
-  - With the legacy `approve` MCP tool, the model asks and the model can answer, unless the harness stops it from calling that tool. Prefer clients that support elicitation or MRTR, where the prompt goes to the user.
-- **Retries.** A token is used up when a resume starts. If the resume fails (the process dies, the connection drops), retrying with the same token is refused.
+  - For MCP clients without elicitation, the `approve` tool lets the model answer. So it's off unless `mcp.approveTool` is set, and without it those calls are denied. Turn it on only if the harness asks the user before every call to that tool. Prefer clients that support elicitation or MRTR, where the prompt goes to the user.
+- **Retries.** A token is used up when a resume starts. The MCP server answers a retried resume with the first result for ten minutes. A retry that reaches a restarted server is refused.
 - **The shell sandbox is a process sandbox, not a VM.**
   - Commands share the kernel with the host.
   - Linux has no seccomp filter yet.
