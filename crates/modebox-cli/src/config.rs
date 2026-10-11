@@ -31,6 +31,21 @@ pub struct Config {
     pub limits: LimitsConfig,
     #[serde(default)]
     pub mcp: McpConfig,
+    #[serde(default)]
+    pub flows: FlowsConfig,
+}
+
+/// Data-flow checks: once a run has called a source, calls to sinks need
+/// approval. Patterns are tool-path globs, as in `approve`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FlowsConfig {
+    /// Tools that return private data, e.g. `"gmail.*"` or `"fs.get"`.
+    #[serde(default)]
+    pub sources: Vec<String>,
+    /// Tools that can send data out, e.g. `"slack.post_*"` or `"http.*"`.
+    #[serde(default)]
+    pub sinks: Vec<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]

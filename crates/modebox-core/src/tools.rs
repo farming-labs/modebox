@@ -139,6 +139,12 @@ pub struct Tool {
     /// JSON Schema of the result.
     pub output_schema: Option<serde_json::Value>,
     pub approval: Approval,
+    /// Returns data that shouldn't leave your control (mail, files,
+    /// secrets). Once a run has called a source, every call to a sink needs
+    /// approval: that's when private data could go out.
+    pub source: bool,
+    /// Can send data out of your control (HTTP, messages, posts).
+    pub sink: bool,
     pub(crate) handler: Arc<dyn Handler>,
 }
 
@@ -150,6 +156,8 @@ impl Tool {
             input_schema: None,
             output_schema: None,
             approval: Approval::Never,
+            source: false,
+            sink: false,
             handler: Arc::new(handler),
         }
     }
@@ -171,6 +179,18 @@ impl Tool {
 
     pub fn approval(mut self, approval: Approval) -> Self {
         self.approval = approval;
+        self
+    }
+
+    /// Mark the tool as a source of private data (see [`Tool::source`]).
+    pub fn source(mut self) -> Self {
+        self.source = true;
+        self
+    }
+
+    /// Mark the tool as able to send data out (see [`Tool::sink`]).
+    pub fn sink(mut self) -> Self {
+        self.sink = true;
         self
     }
 
@@ -262,6 +282,11 @@ impl Toolbox {
 
     pub fn get(&self, name: &str) -> Option<&Tool> {
         self.tools.get(name)
+    }
+
+    /// Change a registered tool, e.g. to set its approval or data flow.
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut Tool> {
+        self.tools.get_mut(name)
     }
 
     pub fn names(&self) -> impl Iterator<Item = &str> {

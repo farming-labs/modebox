@@ -68,7 +68,7 @@ fn engine(id: u32) -> napi::Result<Engine> {
     engines().lock().unwrap().get(&id).cloned().ok_or_else(|| err("engine was dropped"))
 }
 
-/// `tools`: `[{ name, approval?: boolean, description?, inputSchema?, outputSchema? }]`.
+/// `tools`: `[{ name, approval?: boolean, source?: boolean, sink?: boolean, description?, inputSchema?, outputSchema? }]`.
 fn toolbox(tools: &str, dispatch: Arc<Dispatch>) -> napi::Result<Toolbox> {
     let specs: Vec<Json> = serde_json::from_str(tools).map_err(err)?;
     let mut tb = Toolbox::new();
@@ -79,6 +79,12 @@ fn toolbox(tools: &str, dispatch: Arc<Dispatch>) -> napi::Result<Toolbox> {
             let d = d.clone();
             async move { dispatch_call(&d, call).await }
         });
+        if spec["source"] == true {
+            tool = tool.source();
+        }
+        if spec["sink"] == true {
+            tool = tool.sink();
+        }
         if spec["approval"] == true {
             tool = tool.approval(Approval::Always);
         }

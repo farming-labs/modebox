@@ -83,6 +83,18 @@ test('a shared continuationsDir makes tokens single-use across runners', async (
   rmSync(dir, { recursive: true });
 });
 
+test('a sink after a source pauses for approval', async () => {
+  const runner = createRunner({ continuationSecret: 'k'.repeat(32), sources: ['mail.*'], sinks: ['http.post'] });
+  const sent = [];
+  const hostFunctions = { mail: { read: () => 'secret' }, http: { post: (v) => { sent.push(v); return 'ok'; } } };
+  const free = await runner.run({ source: 'await http.post("hi")', hostFunctions });
+  assert.equal(free.value, 'ok');
+  const a = await runner.run({ source: 'await http.post(await mail.read())', hostFunctions });
+  assert.equal(a.status, 'interrupted');
+  assert.match(a.interruptions[0].payload.reason, /mail\.read/);
+  assert.deepEqual(sent, ['hi']);
+});
+
 test('declarations for prompts', () => {
   const runner = createRunner();
   const d = runner.declarations({ gh: { issues: { list: () => [] } } }, { 'gh.issues.list': { description: 'List issues', inputSchema: { type: 'object', properties: { repo: { type: 'string' } }, required: ['repo'] } } });

@@ -6,6 +6,7 @@
 //! copy-on-write memory this is microseconds, not the milliseconds it takes to
 //! boot a JS engine.
 
+use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -301,6 +302,9 @@ pub(crate) struct HostState {
     pub log_bytes: usize,
     pub max_log_bytes: usize,
     pub dropped_logs: u32,
+    /// Source tools this VM has called (see `Tool::source`). Kept with the
+    /// VM: across session cells, and sealed into continuations.
+    pub sources: BTreeSet<String>,
 }
 
 impl HostState {
@@ -316,6 +320,7 @@ impl HostState {
             log_bytes: 0,
             max_log_bytes: usize::MAX,
             dropped_logs: 0,
+            sources: BTreeSet::new(),
         }
     }
 }

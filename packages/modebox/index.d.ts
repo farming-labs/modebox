@@ -26,6 +26,10 @@ export interface RunOptions {
   limits?: Limits;
   /** Glob patterns of host function paths that need approval (`"bank.*"`). */
   approve?: string[];
+  /** Host functions that return private data. Once a run calls one, calls to `sinks` need approval. */
+  sources?: string[];
+  /** Host functions that can send data out (see `sources`). */
+  sinks?: string[];
   /** JSON Schemas per path, used for `declarations()`. */
   schemas?: Record<string, ToolSchema>;
   /** Resume this suspended run instead of starting `source`. */
@@ -81,6 +85,10 @@ export interface RunnerConfig {
   continuationsDir?: string;
   limits?: Limits;
   approve?: string[];
+  /** Host functions that return private data. Once a run calls one, calls to `sinks` need approval. */
+  sources?: string[];
+  /** Host functions that can send data out (see `sources`). */
+  sinks?: string[];
 }
 export declare class Runner {
   constructor(config?: RunnerConfig);

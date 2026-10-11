@@ -31,6 +31,9 @@ struct SessionHeader {
     cells: u32,
     #[serde(default)]
     ext: std::collections::BTreeMap<String, String>,
+    /// Source tools called so far (data-flow checks).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    sources: Vec<String>,
 }
 
 impl Engine {
@@ -56,9 +59,10 @@ impl Engine {
         }
         tools.load_extensions(&h.ext).map_err(invalid)?;
         let cap = crate::run::guest_memory_cap(inner, &opts.limits);
-        let guest = Guest::restore(inner, &diff, clock_of(&opts), cap)
+        let mut guest = Guest::restore(inner, &diff, clock_of(&opts), cap)
             .await
             .map_err(|e| invalid(format!("{e:#}")))?;
+        guest.store.data_mut().sources = h.sources.into_iter().collect();
         Ok(Session { engine: self.clone(), tools, opts, guest: Some(guest), cells: h.cells })
     }
 }
@@ -156,6 +160,7 @@ impl Session {
             expires_ms: now + inner.config.continuation_ttl.as_millis() as u64,
             cells: self.cells,
             ext: self.tools.save_extensions(),
+            sources: g.store.data().sources.iter().cloned().collect(),
         };
         Some(inner.sealer.seal(&snapshot::pack(&header, &diff)))
     }

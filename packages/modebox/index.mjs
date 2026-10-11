@@ -146,10 +146,12 @@ function globMatch(pattern, text) {
   return re.test(text);
 }
 
-function toolSpecs(fns, approve = [], schemas = {}) {
+function toolSpecs(fns, approve = [], schemas = {}, sources = [], sinks = []) {
   return [...fns].map(([name, fn]) => ({
     name,
     approval: !!fn[APPROVAL] || approve.some((p) => globMatch(p, name)),
+    source: sources.some((p) => globMatch(p, name)),
+    sink: sinks.some((p) => globMatch(p, name)),
     description: schemas[name]?.description,
     inputSchema: schemas[name]?.inputSchema,
     outputSchema: schemas[name]?.outputSchema,
@@ -240,7 +242,7 @@ export class Runner {
       secret, metering: config.metering, cacheDir: config.cacheDir,
       continuationTtlMs: config.continuationTtlMs, continuationsDir: config.continuationsDir,
     }));
-    this.#defaults = { limits: config.limits, approve: config.approve };
+    this.#defaults = { limits: config.limits, approve: config.approve, sources: config.sources, sinks: config.sinks };
   }
 
   /**
@@ -251,7 +253,7 @@ export class Runner {
   async run(options) {
     const o = { ...this.#defaults, ...options, limits: { ...this.#defaults.limits, ...options.limits } };
     const fns = flatten(o.hostFunctions);
-    const tools = JSON.stringify(toolSpecs(fns, o.approve, o.schemas));
+    const tools = JSON.stringify(toolSpecs(fns, o.approve, o.schemas, o.sources, o.sinks));
     const dispatch = makeDispatch(fns, o.onCall);
     const opts = nativeOptions(o);
     let out;
