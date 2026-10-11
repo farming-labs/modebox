@@ -1,0 +1,149 @@
+name: Release
+
+# Pushing a `vX.Y.Z` tag builds every target and publishes the crates, the npm
+# packages and a GitHub Release. Running it by hand (Actions → Release → Run
+# workflow) only builds and smoke-tests, so the matrix can be checked first.
+# See docs/releasing.md.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    name: versions match the tag
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Check
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            node scripts/version.mjs --check "${GITHUB_REF_NAME#v}"
+          else
+            echo "not a tag: building $(node scripts/version.mjs) without publishing"
+          fi
+
+  build:
+    name: build (${{ matrix.target }})
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-15, target: aarch64-apple-darwin, npm: darwin-arm64, lib: libmodebox_node.dylib }
+          - { os: macos-15-intel, target: x86_64-apple-darwin, npm: darwin-x64, lib: libmodebox_node.dylib }
+          # 22.04 for an older glibc, so the binaries run on more distributions.
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, npm: linux-x64-gnu, lib: libmodebox_node.so }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, npm: linux-arm64-gnu, lib: libmodebox_node.so }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Build
+        run: cargo build --release --locked -p modebox -p modebox-node
+      - name: Smoke test
+        run: |
+          test "$(target/release/modebox run -e '[1, 2, 3].map(x => x * 2).join()')" = "2,4,6"
+          cp target/release/${{ matrix.lib }} packages/modebox/modebox.node
+          cd packages/modebox && npm test
+      - name: Package the CLI
+        run: |
+          dir=modebox-${{ matrix.target }}
+          mkdir "$dir"
+          cp target/release/modebox LICENSE README.md "$dir"/
+          tar czf "$dir.tar.gz" "$dir"
+          shasum -a 256 "$dir.tar.gz" > "$dir.tar.gz.sha256"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cli-${{ matrix.target }}
+          path: modebox-${{ matrix.target }}.tar.gz*
+      - uses: actions/upload-artifact@v7
+        with:
+          name: npm-${{ matrix.npm }}
+          path: target/release/${{ matrix.lib }}
+
+  crates:
+    name: publish crates
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      # modebox-core first, then modebox; modebox-node isn't published.
+      - run: cargo publish --workspace --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  npm:
+    name: publish npm packages
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: npm-*
+          path: bindings
+      - name: Publish the platform packages, then modebox
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          # Prereleases (X.Y.Z-rc.1) go to the `next` dist-tag, not `latest`.
+          tag=latest; [[ "$GITHUB_REF_NAME" == *-* ]] && tag=next
+          for p in darwin-arm64 darwin-x64 linux-x64-gnu linux-arm64-gnu; do
+            cp bindings/npm-$p/* packages/modebox-$p/modebox.node
+            cp LICENSE packages/modebox-$p/
+            (cd packages/modebox-$p && npm publish --access public --provenance --tag "$tag")
+          done
+          cp LICENSE README.md packages/modebox/
+          cd packages/modebox && npm publish --access public --provenance --tag "$tag"
+
+  github:
+    name: GitHub release
+    needs: [crates, npm]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: cli-*
+          path: dist
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # This version's CHANGELOG section, or generated notes if there isn't one.
+          awk -v v="$version" '$0 ~ "^## \\[?"v"\\]?" {on=1; next} on && /^## / {exit} on' CHANGELOG.md > notes.md 2>/dev/null || true
+          if [ -s notes.md ]; then notes=(--notes-file notes.md); else notes=(--generate-notes); fi
+          gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" "${notes[@]}" \
+            $([[ "$version" == *-* ]] && echo --prerelease)
