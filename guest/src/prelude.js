@@ -5,7 +5,11 @@
   'use strict';
   const g = globalThis;
   const _Map = Map, _Set = Set, _RegExp = RegExp, _Error = Error, _BigInt = BigInt;
-  const _Uint8Array = Uint8Array, _ArrayFrom = Array.from, _isView = ArrayBuffer.isView;
+  const _Uint8Array = Uint8Array, _isView = ArrayBuffer.isView;
+  const _apply = Reflect.apply, _define = Object.defineProperty;
+  const _mapForEach = Map.prototype.forEach, _setForEach = Set.prototype.forEach;
+  // Append without [[Set]], so setters on Array.prototype can't intercept.
+  const push = (a, v) => _define(a, a.length, { value: v, writable: true, enumerable: true, configurable: true });
   const errorTypes = { Error, TypeError, RangeError, SyntaxError, ReferenceError, EvalError, URIError };
 
   const hidden = (obj, name, value) =>
@@ -149,8 +153,10 @@
   };
   return {
     install,
-    entries: (m) => _ArrayFrom(m),
-    values: (s) => _ArrayFrom(s),
+    // The real contents, read with the original forEach: a replaced
+    // Symbol.iterator (on the value or the prototype) doesn't change them.
+    entries: (m) => { const out = []; _apply(_mapForEach, m, [(v, k) => push(out, [k, v])]); return out; },
+    values: (s) => { const out = []; _apply(_setForEach, s, [(v) => push(out, v)]); return out; },
     mkMap: (entries) => new _Map(entries),
     mkSet: (values) => new _Set(values),
     mkRegExp: (src, flags) => new _RegExp(src, flags),

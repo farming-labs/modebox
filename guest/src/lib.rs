@@ -22,15 +22,22 @@ use rand_core::{RngCore, SeedableRng};
 use rquickjs::context::EvalOptions;
 use rquickjs::function::{Opt, Rest};
 use rquickjs::{qjs, Array, Context, Ctx, Function, Object, Persistent, Runtime, TypedArray, Value};
+use serde_json::value::RawValue;
 use serde_json::Value as Json;
 
-use crate::codec::Helpers;
+use crate::codec::{clip, replace_surrogates, utf8, Helpers, StrError};
 
 const PRELUDE: &str = include_str!("prelude.js");
 
 /// QuickJS stack budget. Must stay below the 4 MiB shadow stack set at link
 /// time so overflow surfaces as a catchable RangeError instead of a trap.
 const MAX_STACK: usize = 3 * 1024 * 1024;
+
+/// Most text one `console.*` call can produce; the rest is cut.
+const MAX_LOG_MESSAGE: usize = 64 << 10;
+
+/// Longest error name, message or stack reported to the host.
+const MAX_ERROR_TEXT: usize = 1 << 20;
 
 // ---- host ABI ---------------------------------------------------------------
 
@@ -190,6 +197,10 @@ fn natives<'js>(ctx: &Ctx<'js>) -> rquickjs::Result<Object<'js>> {
             let h = helpers(&ctx);
             let mut msg = String::new();
             for (i, arg) in args.0.iter().enumerate() {
+                if msg.len() >= MAX_LOG_MESSAGE {
+                    msg.push_str("… (truncated)");
+                    break;
+                }
                 if i > 0 {
                     msg.push(' ');
                 }
@@ -217,60 +228,135 @@ fn natives<'js>(ctx: &Ctx<'js>) -> rquickjs::Result<Object<'js>> {
     )?;
     al.set(
         "utf8Encode",
-        Function::new(ctx.clone(), |ctx: Ctx<'js>, s: String| TypedArray::<u8>::new(ctx, s.into_bytes()))?,
+        Function::new(ctx.clone(), |ctx: Ctx<'js>, s: Value<'js>| -> rquickjs::Result<TypedArray<'js, u8>> {
+            // Copied once, from QuickJS's UTF-8 straight into a new buffer.
+            match utf8(&ctx, &s) {
+                Some(Ok(u)) => TypedArray::new_copy(ctx, u.as_str().as_bytes()),
+                Some(Err(StrError::NotUtf8)) => {
+                    // Unpaired surrogates encode as U+FFFD, as TextEncoder specifies.
+                    let raw = s.as_string().cloned().map(|s| s.to_cstring());
+                    let text = match raw {
+                        Some(Ok(c)) => replace_surrogates(unsafe {
+                            std::slice::from_raw_parts(c.as_ptr() as *const u8, c.len())
+                        }),
+                        _ => None,
+                    };
+                    match text {
+                        Some(t) => TypedArray::new_copy(ctx, t.as_bytes()),
+                        None => {
+                            let _ = ctx.catch();
+                            Err(throw_range(&ctx, "TextEncoder: string is too large"))
+                        }
+                    }
+                }
+                Some(Err(StrError::OutOfMemory)) => Err(throw_range(&ctx, "TextEncoder: string is too large")),
+                None => TypedArray::new_copy(ctx, b""),
+            }
+        })?,
     )?;
     al.set(
         "utf8Decode",
         Function::new(
             ctx.clone(),
-            |ctx: Ctx<'js>, bytes: TypedArray<'js, u8>, fatal: Opt<bool>| -> rquickjs::Result<String> {
+            |ctx: Ctx<'js>, bytes: TypedArray<'js, u8>, fatal: Opt<bool>| -> rquickjs::Result<rquickjs::String<'js>> {
                 let slice = codec::bytes_of(&bytes);
-                if fatal.0.unwrap_or(false) {
-                    match std::str::from_utf8(slice) {
-                        Ok(s) => Ok(s.to_owned()),
-                        Err(_) => Err(rquickjs::Exception::throw_type(
-                            &ctx,
-                            "TextDecoder: the encoded data was not valid UTF-8",
-                        )),
+                match std::str::from_utf8(slice) {
+                    Ok(s) => rquickjs::String::from_str(ctx, s),
+                    Err(_) if fatal.0.unwrap_or(false) => Err(rquickjs::Exception::throw_type(
+                        &ctx,
+                        "TextDecoder: the encoded data was not valid UTF-8",
+                    )),
+                    Err(_) => {
+                        let mut text = Vec::new();
+                        if text.try_reserve(slice.len() + 16).is_err() {
+                            return Err(throw_range(&ctx, "TextDecoder: input is too large"));
+                        }
+                        for chunk in slice.utf8_chunks() {
+                            text.extend_from_slice(chunk.valid().as_bytes());
+                            if !chunk.invalid().is_empty() {
+                                if text.try_reserve(3).is_err() {
+                                    return Err(throw_range(&ctx, "TextDecoder: input is too large"));
+                                }
+                                text.extend_from_slice("\u{FFFD}".as_bytes());
+                            }
+                        }
+                        rquickjs::String::from_str(ctx, std::str::from_utf8(&text).unwrap_or_default())
                     }
-                } else {
-                    Ok(String::from_utf8_lossy(slice).into_owned())
                 }
             },
         )?,
     )?;
     al.set(
         "atob",
-        Function::new(ctx.clone(), |ctx: Ctx<'js>, s: String| -> rquickjs::Result<String> {
-            let cleaned: String = s.chars().filter(|c| !c.is_ascii_whitespace()).collect();
+        Function::new(ctx.clone(), |ctx: Ctx<'js>, s: Value<'js>| -> rquickjs::Result<rquickjs::String<'js>> {
+            let invalid = |ctx: &Ctx<'js>| {
+                rquickjs::Exception::throw_message(ctx, "InvalidCharacterError: atob() input is not valid base64")
+            };
+            let input = match utf8(&ctx, &s) {
+                Some(Ok(u)) => u,
+                Some(Err(StrError::OutOfMemory)) => return Err(throw_range(&ctx, "atob() input is too large")),
+                _ => return Err(invalid(&ctx)),
+            };
+            let raw = input.as_str().as_bytes();
+            let mut cleaned = Vec::new();
+            let b64 = if raw.iter().any(u8::is_ascii_whitespace) {
+                if cleaned.try_reserve(raw.len()).is_err() {
+                    return Err(throw_range(&ctx, "atob() input is too large"));
+                }
+                cleaned.extend(raw.iter().filter(|b| !b.is_ascii_whitespace()));
+                &cleaned[..]
+            } else {
+                raw
+            };
             let engine = base64::engine::GeneralPurpose::new(
                 &base64::alphabet::STANDARD,
                 base64::engine::GeneralPurposeConfig::new()
                     .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
             );
-            match engine.decode(cleaned.as_bytes()) {
-                Ok(bytes) => Ok(bytes.into_iter().map(char::from).collect()),
-                Err(_) => Err(rquickjs::Exception::throw_message(
-                    &ctx,
-                    "InvalidCharacterError: atob() input is not valid base64",
-                )),
+            let mut bytes = Vec::new();
+            if bytes.try_reserve(base64::decoded_len_estimate(b64.len())).is_err() {
+                return Err(throw_range(&ctx, "atob() input is too large"));
             }
+            if engine.decode_vec(b64, &mut bytes).is_err() {
+                return Err(invalid(&ctx));
+            }
+            // Each byte is one Latin-1 character: up to 2 bytes of UTF-8.
+            let mut text = String::new();
+            if text.try_reserve(bytes.len() * 2).is_err() {
+                return Err(throw_range(&ctx, "atob() input is too large"));
+            }
+            text.extend(bytes.iter().map(|&b| char::from(b)));
+            rquickjs::String::from_str(ctx, &text)
         })?,
     )?;
     al.set(
         "btoa",
-        Function::new(ctx.clone(), |ctx: Ctx<'js>, s: String| -> rquickjs::Result<String> {
-            let mut bytes = Vec::with_capacity(s.len());
-            for c in s.chars() {
+        Function::new(ctx.clone(), |ctx: Ctx<'js>, s: Value<'js>| -> rquickjs::Result<rquickjs::String<'js>> {
+            let outside = |ctx: &Ctx<'js>| {
+                rquickjs::Exception::throw_message(
+                    ctx,
+                    "InvalidCharacterError: btoa() input contains characters outside Latin-1",
+                )
+            };
+            let input = match utf8(&ctx, &s) {
+                Some(Ok(u)) => u,
+                Some(Err(StrError::OutOfMemory)) => return Err(throw_range(&ctx, "btoa() input is too large")),
+                _ => return Err(outside(&ctx)),
+            };
+            let text = input.as_str();
+            let mut bytes = Vec::new();
+            let mut encoded = String::new();
+            if bytes.try_reserve(text.len()).is_err() || encoded.try_reserve(text.len().div_ceil(3) * 4).is_err() {
+                return Err(throw_range(&ctx, "btoa() input is too large"));
+            }
+            for c in text.chars() {
                 if (c as u32) > 0xff {
-                    return Err(rquickjs::Exception::throw_message(
-                        &ctx,
-                        "InvalidCharacterError: btoa() input contains characters outside Latin-1",
-                    ));
+                    return Err(outside(&ctx));
                 }
                 bytes.push(c as u8);
             }
-            Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+            base64::engine::general_purpose::STANDARD.encode_string(&bytes, &mut encoded);
+            rquickjs::String::from_str(ctx, &encoded)
         })?,
     )?;
     al.set(
@@ -285,11 +371,16 @@ fn natives<'js>(ctx: &Ctx<'js>) -> rquickjs::Result<Object<'js>> {
                     &format!("DataCloneError: {}", e.describe("value")),
                 ));
             }
-            let json: Json = serde_json::from_slice(&out).expect("codec emits valid JSON");
-            codec::decode(&ctx, &json, &h)
+            let decoded = std::str::from_utf8(&out).map_err(|e| e.to_string()).and_then(|json| codec::decode(&ctx, json, &h));
+            decoded.map_err(|e| rquickjs::Exception::throw_message(&ctx, &format!("DataCloneError: {e}")))
         })?,
     )?;
     Ok(al)
+}
+
+/// Throw a RangeError (for inputs too large to handle).
+fn throw_range(ctx: &Ctx<'_>, msg: &str) -> rquickjs::Error {
+    rquickjs::Exception::throw_range(ctx, msg)
 }
 
 fn host_call<'js>(ctx: &Ctx<'js>, name: String, args: Value<'js>) -> rquickjs::Result<Value<'js>> {
@@ -364,17 +455,21 @@ pub unsafe extern "C" fn mb_start(ptr: *mut u8, len: u32) -> u32 {
     });
 
     with_ctx(|ctx, vm| {
-        let hooks = vm.hooks.clone().restore(ctx).expect("hooks");
-        let install: Function = hooks.get("install").expect("install");
-        let fns = Array::new(ctx.clone()).expect("array");
-        if let Some(list) = req["fns"].as_array() {
-            for (i, f) in list.iter().enumerate() {
-                if let Some(s) = f.as_str() {
-                    fns.set(i, s).expect("set");
+        // Can fail if the memory limit is tiny: report it like any other error.
+        let installed = (|| -> rquickjs::Result<()> {
+            let hooks = vm.hooks.clone().restore(ctx)?;
+            let install: Function = hooks.get("install")?;
+            let fns = Array::new(ctx.clone())?;
+            if let Some(list) = req["fns"].as_array() {
+                for (i, f) in list.iter().enumerate() {
+                    if let Some(s) = f.as_str() {
+                        fns.set(i, s)?;
+                    }
                 }
             }
-        }
-        if install.call::<_, ()>((fns,)).is_err() {
+            install.call::<_, ()>((fns,))
+        })();
+        if installed.is_err() {
             let exc = ctx.catch();
             return fail_value(ctx, &exc);
         }
@@ -426,12 +521,57 @@ pub unsafe extern "C" fn mb_start(ptr: *mut u8, len: u32) -> u32 {
 fn set_main<'js>(ctx: &Ctx<'js>, main: Value<'js>) {
     // Mark the main promise handled; its outcome is read directly.
     if let Some(p) = main.as_object() {
-        if let Ok(catch) = p.get::<_, Function>("catch") {
-            let noop = Function::new(ctx.clone(), || {}).expect("fn");
+        let noop = Function::new(ctx.clone(), || {});
+        if let (Ok(catch), Ok(noop)) = (p.get::<_, Function>("catch"), noop) {
             let _ = catch.call::<_, Value>((rquickjs::function::This(main.clone()), noop));
         }
+        let _ = ctx.catch();
     }
     bridge(|b| b.main = Some(Persistent::save(ctx, main)));
+}
+
+/// One settled host call. Values stay raw JSON until they're decoded
+/// straight into JS, so no parse tree of a large result is ever built.
+#[derive(serde::Deserialize)]
+struct Settled<'a> {
+    id: u32,
+    #[serde(default)]
+    ok: bool,
+    #[serde(borrow, default)]
+    v: Option<&'a RawValue>,
+    #[serde(borrow, default)]
+    e: Option<HostError<'a>>,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct HostError<'a> {
+    #[serde(borrow, default)]
+    name: Option<std::borrow::Cow<'a, str>>,
+    #[serde(borrow, default)]
+    message: Option<std::borrow::Cow<'a, str>>,
+    #[serde(borrow, default)]
+    code: Option<&'a RawValue>,
+    #[serde(borrow, default)]
+    data: Option<&'a RawValue>,
+}
+
+/// The JS error a failed host call rejects with.
+fn host_error<'js>(ctx: &Ctx<'js>, h: &Helpers<'js>, e: &HostError<'_>) -> rquickjs::Result<Value<'js>> {
+    let extra = Object::new(ctx.clone())?;
+    for (k, raw) in [("code", e.code), ("data", e.data)] {
+        if let Some(raw) = raw {
+            // A field that can't be loaded is dropped rather than failing the call.
+            if let Ok(v) = codec::decode(ctx, raw.get(), h) {
+                extra.set(k, v)?;
+            }
+        }
+    }
+    h.mk_error.call((
+        e.name.as_deref().unwrap_or("Error"),
+        e.message.as_deref().unwrap_or("host function failed"),
+        Value::new_undefined(ctx.clone()),
+        extra,
+    ))
 }
 
 /// Settle host calls. Input: JSON array of `{id, ok: true, v}` or
@@ -439,42 +579,31 @@ fn set_main<'js>(ctx: &Ctx<'js>, main: Value<'js>) {
 #[no_mangle]
 pub unsafe extern "C" fn mb_settle(ptr: *mut u8, len: u32) -> u32 {
     let input = take_input(ptr, len);
-    let items: Vec<Json> = match serde_json::from_slice(&input) {
+    let items: Vec<Settled> = match serde_json::from_slice(&input) {
         Ok(v) => v,
         Err(e) => return fail_plain("ModeboxError", &format!("bad settle request: {e}")),
     };
     with_ctx(|ctx, _vm| {
         let h = helpers(ctx);
         for item in &items {
-            let Some(id) = item["id"].as_u64() else { continue };
-            let Some((resolve, reject)) = bridge(|b| b.pending.remove(&(id as u32))) else { continue };
-            let ok = item["ok"].as_bool().unwrap_or(false);
-            let result = if ok {
-                let value = match codec::decode(ctx, &item["v"], &h) {
-                    Ok(v) => v,
-                    Err(_) => ctx.catch(),
-                };
-                resolve.restore(ctx).expect("resolve").call::<_, ()>((value,))
+            let Some((resolve, reject)) = bridge(|b| b.pending.remove(&item.id)) else { continue };
+            let resolve = resolve.restore(ctx).expect("resolve");
+            let reject = reject.restore(ctx).expect("reject");
+            let result = if item.ok {
+                match codec::decode(ctx, item.v.map_or("null", |v| v.get()), &h) {
+                    Ok(value) => resolve.call::<_, ()>((value,)),
+                    // Too big to load (or malformed): the call fails, the run goes on.
+                    Err(why) => {
+                        let msg = format!("the host function's result could not be loaded into the sandbox: {why}");
+                        let err = h.mk_error.call::<_, Value>(("RangeError", msg, Value::new_undefined(ctx.clone())));
+                        let err = err.unwrap_or_else(|_| ctx.catch());
+                        reject.call::<_, ()>((err,))
+                    }
+                }
             } else {
-                let e = &item["e"];
-                let mut extra = serde_json::Map::new();
-                if let Some(code) = e.get("code") {
-                    extra.insert("code".into(), code.clone());
-                }
-                if let Some(data) = e.get("data") {
-                    extra.insert("data".into(), data.clone());
-                }
-                let extra = codec::decode(ctx, &Json::Object(extra), &h).expect("decode");
-                let err = h
-                    .mk_error
-                    .call::<_, Value>((
-                        e["name"].as_str().unwrap_or("Error"),
-                        e["message"].as_str().unwrap_or("host function failed"),
-                        Value::new_undefined(ctx.clone()),
-                        extra,
-                    ))
-                    .expect("mkError");
-                reject.restore(ctx).expect("reject").call::<_, ()>((err,))
+                let err = host_error(ctx, &h, item.e.as_ref().unwrap_or(&HostError::default()));
+                let err = err.unwrap_or_else(|_| ctx.catch());
+                reject.call::<_, ()>((err,))
             };
             if result.is_err() {
                 // resolve/reject never throw for well-formed promises; drain anyway.
@@ -600,6 +729,17 @@ fn flush_unhandled() {
     }
 }
 
+/// Whether QuickJS's heap is (all but) at its limit. Raw API: the rquickjs
+/// runtime is already locked while a context is in use.
+fn at_memory_limit(ctx: &Ctx<'_>) -> bool {
+    unsafe {
+        let rt = qjs::JS_GetRuntime(ctx.as_raw().as_ptr());
+        let mut usage: qjs::JSMemoryUsage = std::mem::zeroed();
+        qjs::JS_ComputeMemoryUsage(rt, &mut usage);
+        usage.malloc_limit > 0 && usage.malloc_size + (16 << 10) >= usage.malloc_limit
+    }
+}
+
 fn fail_plain(name: &str, message: &str) -> u32 {
     let event = serde_json::json!({ "name": name, "message": message });
     send(EV_ERROR, event.to_string().as_bytes());
@@ -610,15 +750,33 @@ fn fail_value<'js>(ctx: &Ctx<'js>, value: &Value<'js>) -> u32 {
     let h = helpers(ctx);
     let mut event = serde_json::Map::new();
     if let Some(obj) = value.as_object().filter(|_| unsafe { qjs::JS_IsError(value.as_raw()) }) {
-        let get = |k: &str| obj.get::<_, Option<String>>(k).ok().flatten();
+        // Cut before copying: the message of a thrown error can be any size.
+        let get = |k: &str| match obj.get::<_, Value>(k) {
+            Ok(v) if v.is_string() => {
+                let (mut s, cut) = clip(ctx, &v, MAX_ERROR_TEXT);
+                if cut {
+                    s.push_str("… (truncated)");
+                }
+                Some(s)
+            }
+            Ok(_) => None,
+            Err(_) => {
+                let _ = ctx.catch();
+                None
+            }
+        };
         event.insert("name".into(), get("name").unwrap_or_else(|| "Error".into()).into());
         event.insert("message".into(), get("message").unwrap_or_default().into());
         if let Some(stack) = get("stack") {
             event.insert("stack".into(), stack.into());
         }
-        if let Ok(Some(code)) = obj.get::<_, Option<String>>("code") {
+        if let Some(code) = get("code") {
             event.insert("code".into(), code.into());
         }
+    } else if value.is_null() && at_memory_limit(ctx) {
+        // Out of memory with no room left even for the error object.
+        event.insert("name".into(), "InternalError".into());
+        event.insert("message".into(), "out of memory".into());
     } else {
         event.insert("name".into(), "Uncaught".into());
         event.insert("message".into(), inspect::inspect(ctx, value, &h, false).into());

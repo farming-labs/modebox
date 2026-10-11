@@ -1,21 +1,28 @@
 //! Node-style value formatting for console output (`util.inspect`-like).
 //! Models have seen a lot of Node output, so matching its shape makes logs
 //! easy for them to read back.
+//!
+//! Output is bounded no matter the input: strings are cut before they are
+//! copied out of QuickJS, and a budget stops formatting once enough text has
+//! been produced, so logging a huge value can't exhaust the guest's memory.
 
-use rquickjs::{qjs, Array, Ctx, Function, Object, Type, Value};
+use rquickjs::{qjs, Atom, Ctx, Function, Object, Type, Value};
 
-use crate::codec::Helpers;
+use crate::codec::{clip, length, Helpers};
 
 const MAX_DEPTH: usize = 2;
 const MAX_ITEMS: usize = 100;
-const MAX_STRING: usize = 10_000;
+/// Longest output for one value; longer output is cut.
+pub const MAX_STRING: usize = 10_000;
 const LINE_WIDTH: usize = 72;
+const TRUNCATED: &str = "… (truncated)";
 
 /// Format a value. `top` strings print raw (like `console.log("x")`).
 pub fn inspect<'js>(ctx: &Ctx<'js>, v: &Value<'js>, h: &Helpers<'js>, top: bool) -> String {
-    let mut f = Fmt { ctx, h, seen: Vec::new() };
+    let mut f = Fmt { ctx, h, seen: Vec::new(), budget: MAX_STRING };
     let mut s = if top && v.is_string() {
-        v.as_string().and_then(|s| s.to_string().ok()).unwrap_or_default()
+        let (s, cut) = clip(ctx, v, MAX_STRING);
+        if cut { s + TRUNCATED } else { s }
     } else {
         f.fmt(v, 0)
     };
@@ -25,7 +32,7 @@ pub fn inspect<'js>(ctx: &Ctx<'js>, v: &Value<'js>, h: &Helpers<'js>, top: bool)
             cut -= 1;
         }
         s.truncate(cut);
-        s.push_str("… (truncated)");
+        s.push_str(TRUNCATED);
     }
     s
 }
@@ -34,6 +41,8 @@ struct Fmt<'a, 'js> {
     ctx: &'a Ctx<'js>,
     h: &'a Helpers<'js>,
     seen: Vec<usize>,
+    /// Bytes of leaf text still allowed; at zero, everything left prints as `…`.
+    budget: usize,
 }
 
 fn quote(s: &str) -> String {
@@ -74,49 +83,79 @@ fn wrap(open: &str, items: Vec<String>, close: &str, depth: usize) -> String {
 }
 
 impl<'a, 'js> Fmt<'a, 'js> {
-    fn js_string(&self, v: &Value<'js>) -> String {
-        rquickjs::FromJs::from_js(self.ctx, v.clone())
-            .map(|c: rquickjs::Coerced<String>| c.0)
-            .unwrap_or_else(|_| "<unprintable>".into())
+    /// Text of a JS string value, cut to what the budget allows.
+    fn text(&mut self, v: &Value<'js>) -> String {
+        let (s, cut) = clip(self.ctx, v, self.budget);
+        self.budget = self.budget.saturating_sub(s.len());
+        if cut { s + "…" } else { s }
     }
 
-    fn call_str(&self, obj: &Object<'js>, method: &str) -> Option<String> {
-        let f: Function = obj.get(method).ok()?;
-        f.call((rquickjs::function::This(obj.clone()),)).ok()
+    /// `String(v)`, cut to the budget.
+    fn coerced(&mut self, v: &Value<'js>) -> String {
+        match rquickjs::FromJs::from_js(self.ctx, v.clone()) {
+            Ok(rquickjs::Coerced::<rquickjs::String>(s)) => self.text(&s.into_value()),
+            Err(_) => {
+                let _ = self.ctx.catch();
+                "<unprintable>".into()
+            }
+        }
+    }
+
+    fn get(&self, obj: &Object<'js>, k: &str) -> Value<'js> {
+        obj.get(k).unwrap_or_else(|_| {
+            let _ = self.ctx.catch();
+            Value::new_undefined(self.ctx.clone())
+        })
+    }
+
+    /// Call a zero-argument method and return its string result.
+    fn call_str(&mut self, obj: &Object<'js>, method: &str) -> Option<String> {
+        let f: Function = self.get(obj, method).into_function()?;
+        match f.call::<_, Value>((rquickjs::function::This(obj.clone()),)) {
+            Ok(v) if v.is_string() => Some(self.text(&v)),
+            Ok(_) => None,
+            Err(_) => {
+                let _ = self.ctx.catch();
+                None
+            }
+        }
     }
 
     fn fmt(&mut self, v: &Value<'js>, depth: usize) -> String {
-        match v.type_of() {
+        if self.budget == 0 {
+            return "…".into();
+        }
+        let out = match v.type_of() {
             Type::Undefined | Type::Uninitialized => "undefined".into(),
             Type::Null => "null".into(),
-            Type::Bool => v.as_bool().unwrap().to_string(),
-            Type::Int => v.as_int().unwrap().to_string(),
+            Type::Bool => (v.as_bool() == Some(true)).to_string(),
+            Type::Int => v.as_int().unwrap_or(0).to_string(),
             Type::Float => {
-                let f = v.as_float().unwrap();
-                if f == 0.0 && f.is_sign_negative() { "-0".into() } else { self.js_string(v) }
+                let f = v.as_float().unwrap_or(f64::NAN);
+                if f == 0.0 && f.is_sign_negative() { "-0".into() } else { self.coerced(v) }
             }
-            Type::String => quote(&v.as_string().and_then(|s| s.to_string().ok()).unwrap_or_default()),
-            Type::BigInt => format!("{}n", self.js_string(v)),
+            Type::String => quote(&self.text(v)),
+            Type::BigInt => format!("{}n", self.coerced(v)),
             Type::Symbol => {
-                let desc = v
-                    .as_symbol()
-                    .and_then(|s| s.description().ok())
-                    .and_then(|d| d.as_string().and_then(|s| s.to_string().ok()))
-                    .unwrap_or_default();
+                let desc = v.as_symbol().and_then(|s| s.description().ok());
+                let desc = desc.map(|d| self.text(&d)).unwrap_or_default();
                 format!("Symbol({desc})")
             }
-            Type::Function | Type::Constructor => {
-                let obj = v.as_object().unwrap();
-                let name: String = obj.get("name").unwrap_or_default();
-                let src = self.call_str(obj, "toString").unwrap_or_default();
-                if src.starts_with("class") {
-                    format!("[class {}]", if name.is_empty() { "(anonymous)" } else { &name })
-                } else if name.is_empty() {
-                    "[Function (anonymous)]".into()
-                } else {
-                    format!("[Function: {name}]")
+            Type::Function | Type::Constructor => match v.as_object() {
+                Some(obj) => {
+                    let name = self.get(obj, "name");
+                    let name = if name.is_string() { self.text(&name) } else { String::new() };
+                    let src = self.call_str(obj, "toString").unwrap_or_default();
+                    if src.starts_with("class") {
+                        format!("[class {}]", if name.is_empty() { "(anonymous)" } else { &name })
+                    } else if name.is_empty() {
+                        "[Function (anonymous)]".into()
+                    } else {
+                        format!("[Function: {name}]")
+                    }
                 }
-            }
+                None => "[Function]".into(),
+            },
             Type::Promise => {
                 let raw = v.as_raw();
                 let ctx_ptr = self.ctx.as_raw().as_ptr();
@@ -134,23 +173,64 @@ impl<'a, 'js> Fmt<'a, 'js> {
                     }
                 }
             }
-            Type::Exception => self.error(v.as_object().unwrap(), depth),
-            Type::Array | Type::Object | Type::Proxy => self.object(v, depth),
+            Type::Exception | Type::Array | Type::Object | Type::Proxy => self.object(v, depth),
             other => format!("[{}]", other.as_str()),
-        }
+        };
+        // Structure counts against the budget too, so wide values end.
+        self.budget = self.budget.saturating_sub(out.len().min(16));
+        out
     }
 
     fn error(&mut self, obj: &Object<'js>, depth: usize) -> String {
-        let name: String = obj.get("name").unwrap_or_else(|_| "Error".into());
-        let message: String = obj.get("message").unwrap_or_default();
+        let name = self.get(obj, "name");
+        let name = if name.is_string() { self.text(&name) } else { "Error".into() };
+        let message = self.get(obj, "message");
+        let message = if message.is_string() { self.text(&message) } else { String::new() };
         let head = if message.is_empty() { name } else { format!("{name}: {message}") };
         if depth > 0 {
             return format!("[{head}]");
         }
-        match obj.get::<_, Option<String>>("stack").ok().flatten() {
-            Some(stack) if !stack.trim().is_empty() => format!("{head}\n{}", stack.trim_end()),
-            _ => head,
+        let stack = self.get(obj, "stack");
+        let stack = if stack.is_string() { self.text(&stack) } else { String::new() };
+        if stack.trim().is_empty() { head } else { format!("{head}\n{}", stack.trim_end()) }
+    }
+
+    /// Map entries or Set values, from the prelude hooks.
+    fn entries(&mut self, v: &Value<'js>, is_map: bool, depth: usize) -> (Vec<String>, usize) {
+        let f = if is_map { &self.h.entries } else { &self.h.values };
+        let list: rquickjs::Array = match f.call((v.clone(),)) {
+            Ok(l) => l,
+            Err(_) => {
+                let _ = self.ctx.catch();
+                return (vec!["<unreadable>".into()], 0);
+            }
+        };
+        let len = length(self.ctx, &list);
+        let mut items = Vec::new();
+        for i in 0..len.min(MAX_ITEMS) {
+            if self.budget == 0 {
+                items.push("…".into());
+                break;
+            }
+            let item: Value = list.get(i).unwrap_or_else(|_| {
+                let _ = self.ctx.catch();
+                Value::new_undefined(self.ctx.clone())
+            });
+            match (is_map, item.as_array()) {
+                (true, Some(kv)) => {
+                    let k: Value = kv.get(0).unwrap_or_else(|_| Value::new_undefined(self.ctx.clone()));
+                    let val: Value = kv.get(1).unwrap_or_else(|_| Value::new_undefined(self.ctx.clone()));
+                    let k = self.fmt(&k, depth + 1);
+                    let val = self.fmt(&val, depth + 1);
+                    items.push(format!("{k} => {val}"));
+                }
+                _ => items.push(self.fmt(&item, depth + 1)),
+            }
         }
+        if len > MAX_ITEMS {
+            items.push(format!("... {} more items", len - MAX_ITEMS));
+        }
+        (items, len)
     }
 
     fn object(&mut self, v: &Value<'js>, depth: usize) -> String {
@@ -158,7 +238,7 @@ impl<'a, 'js> Fmt<'a, 'js> {
         if self.seen.contains(&ptr) {
             return "[Circular]".into();
         }
-        let obj = v.as_object().unwrap();
+        let Some(obj) = v.as_object() else { return "[object]".into() };
         let raw = v.as_raw();
         unsafe {
             if qjs::JS_IsDate(raw) {
@@ -176,10 +256,17 @@ impl<'a, 'js> Fmt<'a, 'js> {
         let is_set = unsafe { qjs::JS_IsSet(raw) };
         let is_buffer = unsafe { qjs::JS_IsArrayBuffer(raw) };
         let typed = unsafe { qjs::JS_GetTypedArrayType(raw) } >= 0;
-        let ctor: String = self.h.ctor_name.call((v.clone(),)).unwrap_or_default();
+        let ctor = match self.h.ctor_name.call::<_, Value>((v.clone(),)) {
+            Ok(c) if c.is_string() => self.text(&c),
+            Ok(_) => String::new(),
+            Err(_) => {
+                let _ = self.ctx.catch();
+                String::new()
+            }
+        };
 
         if is_buffer {
-            let len: usize = obj.get("byteLength").unwrap_or(0);
+            let len = self.get(obj, "byteLength").as_number().unwrap_or(0.0);
             return format!("ArrayBuffer {{ byteLength: {len} }}");
         }
         if depth > MAX_DEPTH {
@@ -188,10 +275,17 @@ impl<'a, 'js> Fmt<'a, 'js> {
 
         self.seen.push(ptr);
         let out = if is_array || typed {
-            let len: usize = obj.get("length").unwrap_or(0);
+            let len = self.get(obj, "length").as_number().unwrap_or(0.0).max(0.0) as usize;
             let mut items = Vec::new();
             for i in 0..len.min(MAX_ITEMS) {
-                let item: Value = obj.get(i as u32).unwrap_or_else(|_| Value::new_undefined(self.ctx.clone()));
+                if self.budget == 0 {
+                    items.push("…".into());
+                    break;
+                }
+                let item: Value = obj.get(i as u32).unwrap_or_else(|_| {
+                    let _ = self.ctx.catch();
+                    Value::new_undefined(self.ctx.clone())
+                });
                 items.push(self.fmt(&item, depth + 1));
             }
             if len > MAX_ITEMS {
@@ -203,34 +297,31 @@ impl<'a, 'js> Fmt<'a, 'js> {
                 wrap("[", items, "]", depth)
             }
         } else if is_map || is_set {
-            let f = if is_map { &self.h.entries } else { &self.h.values };
-            let list: Array = f.call((v.clone(),)).unwrap_or_else(|_| Array::new(self.ctx.clone()).unwrap());
-            let mut items = Vec::new();
-            for i in 0..list.len().min(MAX_ITEMS) {
-                let item: Value = list.get(i).unwrap();
-                if is_map {
-                    let kv = item.as_array().unwrap();
-                    let k = self.fmt(&kv.get(0).unwrap(), depth + 1);
-                    let val = self.fmt(&kv.get(1).unwrap(), depth + 1);
-                    items.push(format!("{k} => {val}"));
-                } else {
-                    items.push(self.fmt(&item, depth + 1));
-                }
-            }
-            if list.len() > MAX_ITEMS {
-                items.push(format!("... {} more items", list.len() - MAX_ITEMS));
-            }
-            wrap(&format!("{}({}) {{", if is_map { "Map" } else { "Set" }, list.len()), items, "}", depth)
+            let (items, len) = self.entries(v, is_map, depth);
+            wrap(&format!("{}({len}) {{", if is_map { "Map" } else { "Set" }), items, "}", depth)
         } else {
             let mut items = Vec::new();
-            for (n, k) in obj.keys::<String>().enumerate() {
-                let Ok(k) = k else { continue };
-                if n >= MAX_ITEMS {
+            for (n, k) in obj.keys::<Atom>().enumerate() {
+                if n >= MAX_ITEMS || self.budget == 0 {
                     items.push("...".into());
                     break;
                 }
-                let val: Value = obj.get(k.as_str()).unwrap_or_else(|_| Value::new_undefined(self.ctx.clone()));
-                items.push(format!("{}: {}", key(&k), self.fmt(&val, depth + 1)));
+                let Ok(k) = k else {
+                    let _ = self.ctx.catch();
+                    continue;
+                };
+                let name = match k.to_js_string() {
+                    Ok(s) => self.text(&s.into_value()),
+                    Err(_) => {
+                        let _ = self.ctx.catch();
+                        continue;
+                    }
+                };
+                let val: Value = obj.get(k).unwrap_or_else(|_| {
+                    let _ = self.ctx.catch();
+                    Value::new_undefined(self.ctx.clone())
+                });
+                items.push(format!("{}: {}", key(&name), self.fmt(&val, depth + 1)));
             }
             let open = if ctor.is_empty() {
                 "[Object: null prototype] {".to_owned()
