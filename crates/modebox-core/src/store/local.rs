@@ -1,10 +1,14 @@
 //! A local directory as a [`Store`].
 //!
-//! Keys map to paths under the root. Every access is jailed: the deepest
-//! existing ancestor of a path is canonicalized (resolving symlinks) and must
-//! stay inside the root. Etags are weak version tokens from size, mtime and
-//! inode, so they're cheap and change on every write. `IfNotExists` is atomic
-//! (hard-link create); `IfMatch` is checked just before an atomic rename.
+//! Keys map to paths under the root. Every access is jailed: a key's path is
+//! resolved (symlinks included) and must stay inside the root, and files are
+//! then opened refusing any symlink, so a path swapped for one in between
+//! can't redirect the access (see `nofollow`). Writes go to a temporary file
+//! that is renamed into place, so they never change a file's contents in
+//! place, and a hard link can't carry them outside the root. Etags are weak
+//! version tokens from size, mtime and inode, so they're cheap and change on
+//! every write. `IfNotExists` is atomic (hard-link create); `IfMatch` is
+//! checked just before an atomic rename.
 
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -49,7 +53,8 @@ impl LocalStore {
         &self.root
     }
 
-    /// Path for `key`, refusing anything that resolves outside the root.
+    /// The real location of `key`: symlinks resolved, refused if that leaves
+    /// the root. Parts that don't exist yet are appended as they are.
     fn path(&self, key: &Key) -> StoreResult<PathBuf> {
         let path = self.root.join(key.as_str());
         let mut probe = path.as_path();
@@ -58,12 +63,23 @@ impl LocalStore {
                 if !real.starts_with(&self.root) {
                     return Err(StoreError::PermissionDenied(format!("{key} resolves outside the store")));
                 }
-                return Ok(path);
+                let rest = path.strip_prefix(probe).unwrap_or(Path::new(""));
+                return Ok(if rest.as_os_str().is_empty() { real } else { real.join(rest) });
             }
             match probe.parent() {
                 Some(p) => probe = p,
                 None => return Ok(path),
             }
+        }
+    }
+
+    /// The directory holding `key`'s entry (resolved like [`Self::path`]) and
+    /// the entry's name. Writes and deletes act on the entry itself, so a
+    /// symlink is replaced or removed, not its target.
+    fn parent(&self, key: &Key) -> StoreResult<(PathBuf, String)> {
+        match key.as_str().rsplit_once('/') {
+            Some((dir, name)) => Ok((self.path(&Key::new(dir)?)?, name.to_owned())),
+            None => Ok((self.root.clone(), key.as_str().to_owned())),
         }
     }
 
@@ -77,18 +93,24 @@ impl LocalStore {
         }
     }
 
+    /// `key` opened for reading, or `None` if it isn't a regular file.
+    fn open_file(&self, key: &Key) -> StoreResult<Option<(std::fs::File, std::fs::Metadata)>> {
+        let f = match nofollow::open_read(&self.path(key)?) {
+            Ok(f) => f,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(race_or_io(key, e)),
+        };
+        let m = f.metadata().map_err(|e| io_err(key, e))?;
+        Ok(m.is_file().then_some((f, m)))
+    }
+
     fn head_sync(&self, key: &Key) -> StoreResult<Option<Meta>> {
-        let path = self.path(key)?;
-        match std::fs::metadata(&path) {
-            Ok(m) if m.is_file() => Ok(Some(self.meta_for(key.clone(), &m))),
-            Ok(_) => Ok(None),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(io_err(key, e)),
-        }
+        Ok(self.open_file(key)?.map(|(_, m)| self.meta_for(key.clone(), &m)))
     }
 
     fn get_sync(&self, key: &Key, opts: GetOptions) -> StoreResult<Option<Object>> {
-        let Some(meta) = self.head_sync(key)? else { return Ok(None) };
+        let Some((mut f, m)) = self.open_file(key)? else { return Ok(None) };
+        let meta = self.meta_for(key.clone(), &m);
         if let Some(want) = &opts.if_match
             && meta.etag.as_ref() != Some(want)
         {
@@ -101,7 +123,6 @@ impl LocalStore {
         if end - start > self.opts.max_object_size {
             return Err(StoreError::TooLarge { key: key.to_string(), size: meta.size });
         }
-        let mut f = std::fs::File::open(self.path(key)?).map_err(|e| io_err(key, e))?;
         f.seek(SeekFrom::Start(start)).map_err(|e| io_err(key, e))?;
         let mut buf = vec![0u8; (end - start) as usize];
         f.read_exact(&mut buf).map_err(|e| io_err(key, e))?;
@@ -115,26 +136,28 @@ impl LocalStore {
         if body.len() as u64 > self.opts.max_object_size {
             return Err(StoreError::TooLarge { key: key.to_string(), size: body.len() as u64 });
         }
-        let path = self.path(key)?;
-        let parent = path.parent().ok_or_else(|| StoreError::InvalidKey(key.to_string()))?;
-        std::fs::create_dir_all(parent).map_err(|e| io_err(key, e))?;
-        // Re-check now that the parents exist (a symlinked dir could point out).
-        self.path(key)?;
-        if path.is_dir() {
+        let (dir, _) = self.parent(key)?;
+        std::fs::create_dir_all(&dir).map_err(|e| io_err(key, e))?;
+        // Resolve again now that the directories exist, then work inside the
+        // directory itself: if its path changes from here on, the open fails
+        // or the write still lands where it was checked.
+        let (dir, name) = self.parent(key)?;
+        let dir = nofollow::Dir::open(&dir).map_err(|e| race_or_io(key, e))?;
+        if dir.is_dir(&name) {
             return Err(StoreError::AlreadyExists(format!("{key} (a directory)")));
         }
-        let tmp = parent.join(format!(".{}.modebox-{}-{}", key.name(), std::process::id(), rand::random::<u32>()));
-        std::fs::write(&tmp, &body).map_err(|e| io_err(key, e))?;
+        let tmp = format!(".{name}.modebox-{}-{}", std::process::id(), rand::random::<u32>());
+        dir.write_new(&tmp, &body).map_err(|e| io_err(key, e))?;
         let cleanup = |e: StoreError| {
-            let _ = std::fs::remove_file(&tmp);
+            let _ = dir.remove(&tmp);
             e
         };
         match &opts.precondition {
             Precondition::IfNotExists => {
                 // link(2) fails if the target exists: an atomic create.
-                match std::fs::hard_link(&tmp, &path) {
+                match dir.link(&tmp, &name) {
                     Ok(()) => {
-                        let _ = std::fs::remove_file(&tmp);
+                        let _ = dir.remove(&tmp);
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                         return Err(cleanup(StoreError::AlreadyExists(key.to_string())));
@@ -147,9 +170,9 @@ impl LocalStore {
                 if current.and_then(|m| m.etag).as_ref() != Some(want) {
                     return Err(cleanup(StoreError::PreconditionFailed(key.to_string())));
                 }
-                std::fs::rename(&tmp, &path).map_err(|e| cleanup(io_err(key, e)))?;
+                dir.rename(&tmp, &name).map_err(|e| cleanup(io_err(key, e)))?;
             }
-            Precondition::None => std::fs::rename(&tmp, &path).map_err(|e| cleanup(io_err(key, e)))?,
+            Precondition::None => dir.rename(&tmp, &name).map_err(|e| cleanup(io_err(key, e)))?,
         }
         self.head_sync(key)?.ok_or_else(|| StoreError::Other(format!("{key}: vanished after write")))
     }
@@ -164,7 +187,9 @@ impl LocalStore {
         {
             return Err(StoreError::PreconditionFailed(key.to_string()));
         }
-        match std::fs::remove_file(self.path(key)?) {
+        let (dir, name) = self.parent(key)?;
+        let dir = nofollow::Dir::open(&dir).map_err(|e| race_or_io(key, e))?;
+        match dir.remove(&name) {
             Ok(()) => Ok(true),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
             Err(e) => Err(io_err(key, e)),
@@ -228,6 +253,15 @@ fn weak_etag(m: &std::fs::Metadata) -> Etag {
     let ino = 0u64;
     let h = blake3::hash(format!("{}:{nanos}:{ino}", m.len()).as_bytes());
     Etag(format!("W/{}", &h.to_hex()[..20]))
+}
+
+/// An open that failed because a symlink appeared on an already-checked path.
+fn race_or_io(key: &Key, e: std::io::Error) -> StoreError {
+    #[cfg(unix)]
+    if matches!(e.raw_os_error(), Some(libc::ELOOP) | Some(libc::ENOTDIR)) {
+        return StoreError::PermissionDenied(format!("{key}: its path changed while it was being opened"));
+    }
+    io_err(key, e)
 }
 
 fn io_err(key: &Key, e: std::io::Error) -> StoreError {
@@ -299,5 +333,192 @@ impl Store for LocalStore {
 impl LocalStore {
     fn clone_ref(&self) -> LocalStore {
         LocalStore { root: self.root.clone(), opts: self.opts.clone() }
+    }
+}
+
+/// Opening checked paths without following symlinks that appear later.
+///
+/// `LocalStore::path` resolves a key to its real location and checks that it
+/// is inside the root, but another process could replace a directory on that
+/// path with a symlink before the file is opened. A real path contains no
+/// symlinks, so files are opened refusing one in *any* component:
+/// `O_NOFOLLOW_ANY` on macOS, `openat2(RESOLVE_NO_SYMLINKS)` on Linux 5.6+
+/// (older kernels can only pin the last component). Writes and deletes use
+/// the `*at` calls inside a directory opened that way, so they land in the
+/// directory that was checked whatever happens to its path afterwards.
+#[cfg(unix)]
+mod nofollow {
+    use std::ffi::{CString, OsStr};
+    use std::fs::File;
+    use std::io::{self, Write};
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+    use std::os::unix::ffi::OsStrExt;
+    use std::path::Path;
+
+    fn cstr(s: &OsStr) -> io::Result<CString> {
+        CString::new(s.as_bytes()).map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "path contains a NUL byte"))
+    }
+
+    fn fd(raw: libc::c_int) -> io::Result<OwnedFd> {
+        if raw < 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            // SAFETY: a new descriptor that nothing else owns.
+            Ok(unsafe { OwnedFd::from_raw_fd(raw) })
+        }
+    }
+
+    fn ok(r: libc::c_int) -> io::Result<()> {
+        if r < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
+    }
+
+    /// open(2) on a path that must not contain a symlink.
+    fn open(path: &Path, flags: libc::c_int) -> io::Result<OwnedFd> {
+        let c = cstr(path.as_os_str())?;
+        let flags = flags | libc::O_CLOEXEC;
+        #[cfg(target_os = "linux")]
+        {
+            // SAFETY: all-zero is a valid `open_how` (it's non-exhaustive, so no literal).
+            let mut how: libc::open_how = unsafe { std::mem::zeroed() };
+            how.flags = flags as u64;
+            how.resolve = libc::RESOLVE_NO_SYMLINKS;
+            // SAFETY: valid C string and `open_how`, with its size.
+            let r = unsafe {
+                libc::syscall(libc::SYS_openat2, libc::AT_FDCWD, c.as_ptr(), &how as *const libc::open_how, size_of::<libc::open_how>())
+            };
+            if r >= 0 {
+                return fd(r as libc::c_int);
+            }
+            let e = io::Error::last_os_error();
+            if e.raw_os_error() != Some(libc::ENOSYS) {
+                return Err(e);
+            }
+            // SAFETY: valid C string.
+            fd(unsafe { libc::open(c.as_ptr(), flags | libc::O_NOFOLLOW) })
+        }
+        #[cfg(target_vendor = "apple")]
+        {
+            // SAFETY: valid C string.
+            fd(unsafe { libc::open(c.as_ptr(), flags | libc::O_NOFOLLOW_ANY) })
+        }
+        #[cfg(not(any(target_os = "linux", target_vendor = "apple")))]
+        {
+            // SAFETY: valid C string.
+            fd(unsafe { libc::open(c.as_ptr(), flags | libc::O_NOFOLLOW) })
+        }
+    }
+
+    /// A file to read. Non-blocking, so opening a FIFO can't hang.
+    pub fn open_read(path: &Path) -> io::Result<File> {
+        open(path, libc::O_RDONLY | libc::O_NONBLOCK).map(File::from)
+    }
+
+    /// A directory, for operating on its entries by name.
+    pub struct Dir(OwnedFd);
+
+    impl Dir {
+        pub fn open(path: &Path) -> io::Result<Dir> {
+            open(path, libc::O_RDONLY | libc::O_DIRECTORY).map(Dir)
+        }
+
+        fn raw(&self) -> libc::c_int {
+            self.0.as_raw_fd()
+        }
+
+        /// Create `name`, which must not exist, holding `body`.
+        pub fn write_new(&self, name: &str, body: &[u8]) -> io::Result<()> {
+            let c = cstr(OsStr::new(name))?;
+            let flags = libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC;
+            // SAFETY: valid directory descriptor and C string.
+            let f = fd(unsafe { libc::openat(self.raw(), c.as_ptr(), flags, 0o644 as libc::c_uint) })?;
+            File::from(f).write_all(body)
+        }
+
+        pub fn link(&self, from: &str, to: &str) -> io::Result<()> {
+            let (a, b) = (cstr(OsStr::new(from))?, cstr(OsStr::new(to))?);
+            // SAFETY: valid descriptors and C strings.
+            ok(unsafe { libc::linkat(self.raw(), a.as_ptr(), self.raw(), b.as_ptr(), 0) })
+        }
+
+        pub fn rename(&self, from: &str, to: &str) -> io::Result<()> {
+            let (a, b) = (cstr(OsStr::new(from))?, cstr(OsStr::new(to))?);
+            // SAFETY: valid descriptors and C strings.
+            ok(unsafe { libc::renameat(self.raw(), a.as_ptr(), self.raw(), b.as_ptr()) })
+        }
+
+        pub fn remove(&self, name: &str) -> io::Result<()> {
+            let c = cstr(OsStr::new(name))?;
+            // SAFETY: valid descriptor and C string.
+            ok(unsafe { libc::unlinkat(self.raw(), c.as_ptr(), 0) })
+        }
+
+        /// Whether the entry itself (not a symlink's target) is a directory.
+        pub fn is_dir(&self, name: &str) -> bool {
+            let Ok(c) = cstr(OsStr::new(name)) else { return false };
+            // SAFETY: zeroed `stat` is valid; fstatat fills it.
+            let mut st: libc::stat = unsafe { std::mem::zeroed() };
+            let r = unsafe { libc::fstatat(self.raw(), c.as_ptr(), &mut st, libc::AT_SYMLINK_NOFOLLOW) };
+            r == 0 && (st.st_mode & libc::S_IFMT) == libc::S_IFDIR
+        }
+    }
+}
+
+/// Elsewhere, the same operations by path (without the race protection).
+#[cfg(not(unix))]
+mod nofollow {
+    use std::fs::File;
+    use std::io::{self, Write};
+    use std::path::{Path, PathBuf};
+
+    pub fn open_read(path: &Path) -> io::Result<File> {
+        File::open(path)
+    }
+
+    pub struct Dir(PathBuf);
+
+    impl Dir {
+        pub fn open(path: &Path) -> io::Result<Dir> {
+            if path.is_dir() { Ok(Dir(path.to_owned())) } else { Err(io::Error::new(io::ErrorKind::NotFound, "not a directory")) }
+        }
+
+        pub fn write_new(&self, name: &str, body: &[u8]) -> io::Result<()> {
+            std::fs::OpenOptions::new().write(true).create_new(true).open(self.0.join(name))?.write_all(body)
+        }
+
+        pub fn link(&self, from: &str, to: &str) -> io::Result<()> {
+            std::fs::hard_link(self.0.join(from), self.0.join(to))
+        }
+
+        pub fn rename(&self, from: &str, to: &str) -> io::Result<()> {
+            std::fs::rename(self.0.join(from), self.0.join(to))
+        }
+
+        pub fn remove(&self, name: &str) -> io::Result<()> {
+            std::fs::remove_file(self.0.join(name))
+        }
+
+        pub fn is_dir(&self, name: &str) -> bool {
+            std::fs::symlink_metadata(self.0.join(name)).is_ok_and(|m| m.is_dir())
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::nofollow;
+
+    #[test]
+    fn opens_refuse_a_symlinked_component() {
+        let dir = std::env::temp_dir().join(format!("modebox-nofollow-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("real")).unwrap();
+        let dir = dir.canonicalize().unwrap();
+        std::fs::write(dir.join("real/f.txt"), "x").unwrap();
+        std::os::unix::fs::symlink(dir.join("real"), dir.join("alias")).unwrap();
+        // What a race would leave: a checked path whose directory is now a symlink.
+        assert!(nofollow::open_read(&dir.join("real/f.txt")).is_ok());
+        assert!(nofollow::open_read(&dir.join("alias/f.txt")).is_err());
+        assert!(nofollow::Dir::open(&dir.join("alias")).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

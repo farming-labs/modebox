@@ -101,7 +101,7 @@ Capabilities { writable, atomic_preconditions, atomic_create, range_reads,
 | backend | atomic puts | atomic preconditions | etags | notes |
 |---|---|---|---|---|
 | `MemoryStore` | yes | yes | content hash | reference implementation |
-| `LocalStore` | yes (temp + rename) | `IfNotExists` yes (hard-link create); `IfMatch` check-then-rename | weak (size, mtime, inode) | path jail; symlinks can't escape; listing honors `.gitignore` and skips dotfiles (configurable) |
+| `LocalStore` | yes (temp + rename) | `IfNotExists` yes (hard-link create); `IfMatch` check-then-rename | weak (size, mtime, inode) | path jail: symlinks can't escape, and opens refuse a symlink that appears after the check; writes never modify a file in place; listing honors `.gitignore` and skips dotfiles (configurable) |
 | `ObjectStoreAdapter` gs / az / memory | yes | yes | native | |
 | `ObjectStoreAdapter` s3 | yes | if the endpoint supports conditional writes (S3, R2, MinIO do; some compatibles don't) | native | otherwise falls back to check-then-write |
 | `ObjectStoreAdapter` http | read-mostly | no | server's `ETag` | |
