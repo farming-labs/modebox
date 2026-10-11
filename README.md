@@ -1,5 +1,7 @@
 # modebox
 
+[![CI](https://github.com/farming-labs/modebox/actions/workflows/ci.yml/badge.svg)](https://github.com/farming-labs/modebox/actions/workflows/ci.yml)
+
 Run untrusted, agent-written JavaScript/TypeScript in a WebAssembly sandbox whose only authority is the functions you hand it, and plug it into any agent harness as **code mode** over MCP.
 
 When a call needs your approval, the whole VM is snapshotted into an encrypted token. The run can resume minutes or days later, even in another process, and nothing re-runs.
@@ -200,11 +202,16 @@ tests/fixtures         notes-mcp.mjs (downstream MCP server), drive-mcp.mjs (har
 ```
 
 ```bash
-cargo test --release --workspace                  # 60 Rust tests
-(cd packages/modebox && npm test)                 # Node tests (after copying the built .node)
+cargo test --release --workspace                  # release: some tests assert timings
+cargo clippy --workspace --all-targets -- -D warnings
+cargo build --release -p modebox-cli -p modebox-node
+cp target/release/libmodebox_node.dylib packages/modebox/modebox.node   # .so on Linux
+(cd packages/modebox && npm test)
 node tests/fixtures/drive-mcp.mjs legacy|elicit|mrtr
 node bench/compare.mjs run && node bench/compare.mjs modebox
 ```
+
+CI (`.github/workflows/ci.yml`) runs these on Linux and macOS, checks the workspace builds on Rust 1.92, and rebuilds the guest to confirm the committed wasm matches byte for byte.
 
 ## License
 

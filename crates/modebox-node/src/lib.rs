@@ -2,6 +2,8 @@
 //! strings, and a single JS `dispatch` callback executes every host call.
 //! The ergonomic API lives in `packages/modebox/index.mjs`.
 
+#![allow(clippy::result_large_err)] // ToolError carries messages; boxing it buys nothing here.
+
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;

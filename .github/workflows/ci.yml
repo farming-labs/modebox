@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # Release: some tests assert timings that only hold for optimized builds.
+      - name: Rust tests
+        run: cargo test --release --workspace --locked
+      - name: Build the CLI and the Node binding
+        run: cargo build --release -p modebox-cli -p modebox-node --locked
+      - name: Node tests
+        run: |
+          lib=target/release/libmodebox_node.so
+          [ -f "$lib" ] || lib=target/release/libmodebox_node.dylib
+          cp "$lib" packages/modebox/modebox.node
+          cd packages/modebox && npm test
+      - name: MCP end to end
+        env:
+          MODEBOX_BIN: target/release/modebox
+        run: |
+          for mode in legacy elicit mrtr; do
+            echo "::group::$mode"
+            node tests/fixtures/drive-mcp.mjs "$mode"
+            echo "::endgroup::"
+          done
+
+  msrv:
+    name: msrv (1.92)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.92.0"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-targets --locked
+
+  guest:
+    name: guest wasm is reproducible
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      WASI_SDK_URL: https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-24/wasi-sdk-24.0-arm64-macos.tar.gz
+      WASI_SDK_SHA256: aeae999396d5f5caa5ce419f52e83c35869d5fd21d40af80acba2c80f51b0b3a
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the pinned guest toolchain
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' guest/rust-toolchain.toml)
+          rustup toolchain install "$channel" --profile minimal --target wasm32-unknown-unknown
+      - name: Install wasi-sdk 24
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/wasi-sdk.tar.gz" "$WASI_SDK_URL"
+          echo "$WASI_SDK_SHA256  $RUNNER_TEMP/wasi-sdk.tar.gz" | shasum -a 256 -c -
+          tar -xzf "$RUNNER_TEMP/wasi-sdk.tar.gz" -C "$RUNNER_TEMP"
+          echo "WASI_SDK=$RUNNER_TEMP/wasi-sdk-24.0-arm64-macos" >> "$GITHUB_ENV"
+      - name: Build the guest
+        run: ./scripts/build-guest.sh --locked
+      - name: Compare with the committed wasm
+        run: |
+          if git diff --quiet -- crates/modebox-core/guest/modebox_guest.wasm; then
+            echo "rebuilt wasm matches the committed one"
+          else
+            echo "::error::crates/modebox-core/guest/modebox_guest.wasm differs from a clean rebuild; run scripts/build-guest.sh and commit the result"
+            exit 1
+          fi
+      - name: Keep the rebuilt wasm
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: modebox_guest.wasm
+          path: crates/modebox-core/guest/modebox_guest.wasm

@@ -214,8 +214,9 @@ async fn parallel_calls_run_concurrently() {
         tokio::time::sleep(Duration::from_millis(100)).await;
         Ok(c.input().clone())
     });
+    let engine = engine(); // created before timing: the first use compiles the guest
     let start = Instant::now();
-    let r = engine().run("(await Promise.all([1,2,3,4,5,6,7,8,9,10].map(i => slow(i)))).length", &t, opts()).await;
+    let r = engine.run("(await Promise.all([1,2,3,4,5,6,7,8,9,10].map(i => slow(i)))).length", &t, opts()).await;
     assert_eq!(ok(&r), &Value::from(10));
     assert!(start.elapsed() < Duration::from_millis(400), "took {:?}", start.elapsed());
 }
@@ -262,8 +263,9 @@ async fn timers_fire_in_order_and_clear_works() {
 async fn virtual_time_is_instant_and_deterministic() {
     let mut o = opts();
     o.clock = ClockMode::Virtual { start_ms: 1_700_000_000_000.0 };
+    let engine = engine();
     let start = Instant::now();
-    let r = engine()
+    let r = engine
         .run("const t0 = Date.now(); await new Promise(r => setTimeout(r, 3_600_000)); [t0, Date.now() - t0]", &math(), o)
         .await;
     assert_eq!(ok(&r).to_json(), serde_json::json!([1_700_000_000_000i64, 3_600_000]));
@@ -294,8 +296,9 @@ async fn deadlocks_are_detected() {
 async fn infinite_loop_times_out() {
     let mut o = opts();
     o.limits.timeout = Duration::from_millis(200);
+    let engine = engine();
     let start = Instant::now();
-    let r = engine().run("while (true) {}", &math(), o).await;
+    let r = engine.run("while (true) {}", &math(), o).await;
     assert_eq!(err(&r).kind, ErrorKind::Timeout);
     assert!(start.elapsed() < Duration::from_millis(600), "took {:?}", start.elapsed());
 }
@@ -364,8 +367,9 @@ async fn host_call_limit() {
 async fn big_values_cross_quickly() {
     let mut t = Toolbox::new();
     t.func("blob", |_c: Call| async move { Ok(Value::from("x".repeat(4 << 20))) });
+    let engine = engine();
     let start = Instant::now();
-    let r = engine().run("const s = await blob(); ({ len: s.length, back: s })", &t, opts()).await;
+    let r = engine.run("const s = await blob(); ({ len: s.length, back: s })", &t, opts()).await;
     assert_eq!(ok(&r).get("len"), Some(&Value::from(4 << 20)));
     // 4 MiB in and 4 MiB out; Run's devalue bridge moves ~1 MB/s.
     assert!(start.elapsed() < Duration::from_secs(1), "took {:?}", start.elapsed());
