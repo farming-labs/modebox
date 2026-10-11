@@ -1,0 +1,27 @@
+{
+  "name": "modebox-linux-x64-gnu",
+  "version": "0.1.0",
+  "description": "The modebox native binding for Linux x64 (glibc). Installed by the `modebox` package; don't depend on it directly.",
+  "main": "modebox.node",
+  "files": [
+    "modebox.node"
+  ],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/farming-labs/modebox.git",
+    "directory": "packages/modebox-linux-x64-gnu"
+  }
+}

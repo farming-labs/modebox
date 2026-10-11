@@ -2,12 +2,45 @@
   "name": "modebox",
   "version": "0.1.0",
   "description": "Run agent-written JavaScript/TypeScript in a snapshot-able WebAssembly sandbox (Rust + wasmtime + QuickJS)",
+  "keywords": [
+    "sandbox",
+    "wasm",
+    "javascript",
+    "ai-agents",
+    "mcp",
+    "code-mode"
+  ],
   "type": "module",
   "main": "index.mjs",
   "types": "index.d.ts",
-  "exports": { ".": { "types": "./index.d.ts", "default": "./index.mjs" } },
-  "files": ["index.mjs", "index.d.ts", "modebox.node"],
-  "engines": { "node": ">=18" },
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.mjs"
+    }
+  },
+  "files": [
+    "index.mjs",
+    "index.d.ts"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "modebox-darwin-arm64": "0.1.0",
+    "modebox-darwin-x64": "0.1.0",
+    "modebox-linux-x64-gnu": "0.1.0",
+    "modebox-linux-arm64-gnu": "0.1.0"
+  },
   "license": "MIT",
-  "scripts": { "test": "node --test test/*.test.mjs" }
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/farming-labs/modebox.git",
+    "directory": "packages/modebox"
+  },
+  "homepage": "https://github.com/farming-labs/modebox",
+  "bugs": "https://github.com/farming-labs/modebox/issues",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
 }

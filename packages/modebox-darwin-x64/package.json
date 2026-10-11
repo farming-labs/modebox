@@ -1,0 +1,24 @@
+{
+  "name": "modebox-darwin-x64",
+  "version": "0.1.0",
+  "description": "The modebox native binding for macOS on Intel. Installed by the `modebox` package; don't depend on it directly.",
+  "main": "modebox.node",
+  "files": [
+    "modebox.node"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/farming-labs/modebox.git",
+    "directory": "packages/modebox-darwin-x64"
+  }
+}
