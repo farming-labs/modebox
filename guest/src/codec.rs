@@ -1,7 +1,7 @@
 //! Tagged-JSON codec for values crossing the sandbox boundary.
 //!
 //! Plain JSON values map to themselves. Anything JSON can't express is an
-//! object with a reserved `"$t"` key:
+//! object whose first key is a reserved `"$t"`:
 //!
 //! | tag  | meaning                                   | payload                       |
 //! |------|-------------------------------------------|-------------------------------|
@@ -18,10 +18,20 @@
 //!
 //! The walk happens in compiled Rust against the QuickJS C API, so it is not
 //! interpreted JS and does not burn guest fuel per value.
+//!
+//! Nothing here may abort the guest: a failed Rust allocation in wasm is a
+//! trap that loses the whole run. So the encoder borrows string data from
+//! QuickJS instead of copying it, checks the size limit before every write
+//! and grows its buffer fallibly, and the decoder builds JS values straight
+//! from the JSON text instead of parsing it into a tree first.
+
+use std::borrow::Cow;
+use std::fmt;
 
 use base64::Engine as _;
-use rquickjs::{qjs, Array, Ctx, Function, Object, Type, TypedArray, Value};
-use serde_json::Value as Json;
+use rquickjs::object::Property;
+use rquickjs::{qjs, Array, Atom, CString, Ctx, Function, Object, Type, TypedArray, Value};
+use serde::de::{self, DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 
 pub struct Helpers<'js> {
     pub entries: Function<'js>,
@@ -37,6 +47,8 @@ pub struct Helpers<'js> {
 }
 
 impl<'js> Helpers<'js> {
+    /// `hooks` is the object the prelude returns. Guest code can't reach it,
+    /// so a missing hook is a bug in the prelude, not something input causes.
     pub fn new(hooks: Object<'js>) -> Self {
         let f = |k: &str| hooks.get::<_, Function>(k).expect("prelude hook");
         Helpers {
@@ -53,6 +65,97 @@ impl<'js> Helpers<'js> {
         }
     }
 }
+
+// ---- strings ----------------------------------------------------------------
+
+/// A JS string's UTF-8, borrowed from QuickJS. Pure-ASCII strings aren't
+/// copied at all; others are converted inside QuickJS's heap, where running
+/// out of memory is an ordinary catchable error.
+pub struct Utf8<'js>(CString<'js>);
+
+impl Utf8<'_> {
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+pub enum StrError {
+    /// Contains an unpaired surrogate, which UTF-8 can't represent.
+    NotUtf8,
+    OutOfMemory,
+}
+
+impl StrError {
+    pub fn describe(&self) -> &'static str {
+        match self {
+            StrError::NotUtf8 => "is not a valid string",
+            StrError::OutOfMemory => "is too large for the sandbox's memory",
+        }
+    }
+}
+
+/// UTF-8 of a JS string value (`None` if `v` isn't a string).
+pub fn utf8<'js>(ctx: &Ctx<'js>, v: &Value<'js>) -> Option<Result<Utf8<'js>, StrError>> {
+    let s = v.as_string()?.clone();
+    Some(match s.to_cstring() {
+        Ok(c) => {
+            let bytes = unsafe { std::slice::from_raw_parts(c.as_ptr() as *const u8, c.len()) };
+            if std::str::from_utf8(bytes).is_ok() {
+                Ok(Utf8(c))
+            } else {
+                Err(StrError::NotUtf8)
+            }
+        }
+        Err(_) => {
+            let _ = ctx.catch();
+            Err(StrError::OutOfMemory)
+        }
+    })
+}
+
+/// QuickJS writes an unpaired surrogate as the 3-byte sequence of its code
+/// point (WTF-8), which isn't UTF-8. Replace each with U+FFFD, as a UTF-8
+/// encoder does; it's also 3 bytes, so the length doesn't change. `None` if
+/// the copy can't be allocated.
+pub fn replace_surrogates(bytes: &[u8]) -> Option<String> {
+    let mut out = Vec::new();
+    out.try_reserve_exact(bytes.len()).ok()?;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == 0xED && i + 2 < bytes.len() && (0xA0..=0xBF).contains(&bytes[i + 1]) {
+            out.extend_from_slice("\u{FFFD}".as_bytes());
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    // Anything else invalid would be a QuickJS bug; don't trust it either way.
+    Some(String::from_utf8(out).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()))
+}
+
+/// At most `max` bytes of a JS string as an owned Rust string, cut on a char
+/// boundary, plus whether it was cut. Unpaired surrogates become U+FFFD.
+pub fn clip<'js>(ctx: &Ctx<'js>, v: &Value<'js>, max: usize) -> (String, bool) {
+    let Some(s) = v.as_string().cloned() else { return (String::new(), false) };
+    match s.to_cstring() {
+        Ok(c) => {
+            let bytes = unsafe { std::slice::from_raw_parts(c.as_ptr() as *const u8, c.len()) };
+            let mut end = bytes.len().min(max);
+            while end < bytes.len() && end > 0 && (bytes[end] & 0xC0) == 0x80 {
+                end -= 1;
+            }
+            let text = replace_surrogates(&bytes[..end]).unwrap_or_else(|| "<too large to print>".into());
+            (text, end < bytes.len())
+        }
+        Err(_) => {
+            let _ = ctx.catch();
+            ("<too large to print>".into(), true)
+        }
+    }
+}
+
+// ---- encode -----------------------------------------------------------------
 
 /// Why a value could not be encoded, plus where in the value it happened.
 pub struct EncodeError {
@@ -96,6 +199,7 @@ impl EncodeError {
 
 type EResult = Result<(), EncodeError>;
 
+/// Append `v` as tagged JSON to `out`, which must not grow past `limit` bytes.
 pub fn encode<'js>(
     ctx: &Ctx<'js>,
     v: &Value<'js>,
@@ -118,13 +222,16 @@ struct Encoder<'a, 'js> {
     stack: Vec<usize>,
 }
 
+/// Path segment for an object key in error messages (long keys are cut).
 fn key_seg(key: &str) -> String {
     let ident = !key.is_empty()
         && key.chars().enumerate().all(|(i, c)| c == '_' || c == '$' || c.is_ascii_alphabetic() || (i > 0 && c.is_ascii_digit()));
-    if ident {
+    if ident && key.len() <= 64 {
         format!(".{key}")
     } else {
-        format!("[{}]", serde_json::to_string(key).unwrap())
+        let short: String = key.chars().take(64).collect();
+        let more = if short.len() < key.len() { "…" } else { "" };
+        format!("[{}{more}]", serde_json::to_string(&short).unwrap_or_default())
     }
 }
 
@@ -137,65 +244,123 @@ pub fn bytes_of<'a>(view: &'a TypedArray<'_, u8>) -> &'a [u8] {
     }
 }
 
+/// An array's length. rquickjs's `Array::len` asserts the length is an int,
+/// which fails (a panic, so a trap) from 2^31 up, where QuickJS stores it as a
+/// double.
+pub fn length(ctx: &Ctx<'_>, arr: &Array<'_>) -> usize {
+    match arr.as_object().get::<_, Value>("length") {
+        Ok(v) => v.as_number().unwrap_or(0.0).max(0.0) as usize,
+        Err(_) => {
+            let _ = ctx.catch();
+            0
+        }
+    }
+}
+
 fn raw_ptr(v: &Value<'_>) -> usize {
     unsafe { qjs::JS_VALUE_GET_PTR(v.as_raw()) as usize }
 }
 
+const HEX: &[u8; 16] = b"0123456789abcdef";
+
 impl<'a, 'js> Encoder<'a, 'js> {
-    fn check_size(&self) -> EResult {
-        if self.out.len() > self.limit {
-            return Err(EncodeError::new(format!("is larger than the {} byte limit", self.limit)));
+    fn too_large(&self) -> EncodeError {
+        EncodeError::new(format!("is larger than the {} byte limit", self.limit))
+    }
+
+    /// The only way bytes reach `out`: limit-checked, and grown fallibly so a
+    /// full heap is an error instead of a trap.
+    fn put(&mut self, b: &[u8]) -> EResult {
+        if self.out.len() + b.len() > self.limit {
+            return Err(self.too_large());
         }
+        self.out.try_reserve(b.len()).map_err(|_| EncodeError::new("is too large for the sandbox's memory"))?;
+        self.out.extend_from_slice(b);
         Ok(())
     }
 
-    fn raw(&mut self, s: &str) {
-        self.out.extend_from_slice(s.as_bytes());
+    /// `s` as a JSON string literal.
+    fn json_str(&mut self, s: &str) -> EResult {
+        // Escaping only grows it, so this fails fast on oversized strings.
+        if self.out.len() + s.len() + 2 > self.limit {
+            return Err(self.too_large());
+        }
+        let b = s.as_bytes();
+        self.put(b"\"")?;
+        let mut start = 0;
+        for (i, &c) in b.iter().enumerate() {
+            let short: &[u8] = match c {
+                b'"' => b"\\\"",
+                b'\\' => b"\\\\",
+                b'\n' => b"\\n",
+                b'\r' => b"\\r",
+                b'\t' => b"\\t",
+                0x08 => b"\\b",
+                0x0c => b"\\f",
+                0..=0x1f => b"",
+                _ => continue,
+            };
+            self.put(&b[start..i])?;
+            if short.is_empty() {
+                self.put(&[b'\\', b'u', b'0', b'0', HEX[(c >> 4) as usize], HEX[(c & 0xf) as usize]])?;
+            } else {
+                self.put(short)?;
+            }
+            start = i + 1;
+        }
+        self.put(&b[start..])?;
+        self.put(b"\"")
     }
 
-    fn string(&mut self, s: &str) {
-        serde_json::to_writer(&mut *self.out, s).unwrap();
-    }
-
-    fn number(&mut self, f: f64) {
-        if f.is_nan() {
-            self.raw(r#"{"$t":"n","v":"NaN"}"#)
-        } else if f.is_infinite() {
-            self.raw(if f > 0.0 { r#"{"$t":"n","v":"Infinity"}"# } else { r#"{"$t":"n","v":"-Infinity"}"# })
-        } else if f == 0.0 && f.is_sign_negative() {
-            self.raw(r#"{"$t":"n","v":"-0"}"#)
-        } else if f.fract() == 0.0 && f.abs() < 9_007_199_254_740_992.0 {
-            self.raw(&(f as i64).to_string())
-        } else {
-            serde_json::to_writer(&mut *self.out, &f).unwrap()
+    /// A JS string value as a JSON string literal, without copying it first.
+    fn js_str(&mut self, v: &Value<'js>) -> EResult {
+        match utf8(self.ctx, v) {
+            Some(Ok(s)) => self.json_str(s.as_str()),
+            Some(Err(e)) => Err(EncodeError::new(e.describe())),
+            None => self.put(b"null"),
         }
     }
 
-    fn tagged(&mut self, tag: &str) {
-        self.raw("{\"$t\":\"");
-        self.raw(tag);
-        self.raw("\"");
+    fn number(&mut self, f: f64) -> EResult {
+        if f.is_nan() {
+            self.put(br#"{"$t":"n","v":"NaN"}"#)
+        } else if f.is_infinite() {
+            self.put(if f > 0.0 { br#"{"$t":"n","v":"Infinity"}"# } else { br#"{"$t":"n","v":"-Infinity"}"# })
+        } else if f == 0.0 && f.is_sign_negative() {
+            self.put(br#"{"$t":"n","v":"-0"}"#)
+        } else if f.fract() == 0.0 && f.abs() < 9_007_199_254_740_992.0 {
+            self.put((f as i64).to_string().as_bytes())
+        } else {
+            self.put(serde_json::to_string(&f).unwrap_or_else(|_| "null".into()).as_bytes())
+        }
+    }
+
+    fn tagged(&mut self, tag: &str) -> EResult {
+        self.put(b"{\"$t\":\"")?;
+        self.put(tag.as_bytes())?;
+        self.put(b"\"")
     }
 
     fn value(&mut self, v: &Value<'js>) -> EResult {
-        self.check_size()?;
+        if self.out.len() > self.limit {
+            return Err(self.too_large());
+        }
         match v.type_of() {
-            Type::Undefined | Type::Uninitialized => self.raw(r#"{"$t":"u"}"#),
-            Type::Null => self.raw("null"),
-            Type::Bool => self.raw(if v.as_bool().unwrap() { "true" } else { "false" }),
-            Type::Int => self.raw(&v.as_int().unwrap().to_string()),
-            Type::Float => self.number(v.as_float().unwrap()),
-            Type::String => {
-                let s = v.as_string().unwrap().to_string().map_err(|_| EncodeError::new("is not a valid string"))?;
-                self.string(&s)
-            }
+            Type::Undefined | Type::Uninitialized => self.put(br#"{"$t":"u"}"#)?,
+            Type::Null => self.put(b"null")?,
+            Type::Bool => self.put(if v.as_bool() == Some(true) { b"true" } else { b"false" })?,
+            Type::Int => self.put(v.as_int().unwrap_or(0).to_string().as_bytes())?,
+            Type::Float => self.number(v.as_float().unwrap_or(f64::NAN))?,
+            Type::String => self.js_str(v)?,
             Type::BigInt => {
-                let s: rquickjs::Coerced<String> =
-                    rquickjs::FromJs::from_js(self.ctx, v.clone()).map_err(|_| EncodeError::new("is an unreadable BigInt"))?;
-                self.tagged("bi");
-                self.raw(",\"v\":");
-                self.string(&s.0);
-                self.raw("}");
+                let s: rquickjs::Coerced<rquickjs::String> = rquickjs::FromJs::from_js(self.ctx, v.clone()).map_err(|_| {
+                    let _ = self.ctx.catch();
+                    EncodeError::new("is an unreadable BigInt")
+                })?;
+                self.tagged("bi")?;
+                self.put(b",\"v\":")?;
+                self.js_str(&s.0.into_value())?;
+                self.put(b"}")?;
             }
             Type::Symbol => return Err(EncodeError::new("is a Symbol, which cannot cross the sandbox boundary")),
             Type::Function | Type::Constructor => {
@@ -205,8 +370,7 @@ impl<'a, 'js> Encoder<'a, 'js> {
                 return Err(EncodeError::new("is a Promise, which cannot cross the sandbox boundary (missing `await`?)"))
             }
             Type::Array => self.array(v)?,
-            Type::Exception => self.error(v.as_object().unwrap())?,
-            Type::Object | Type::Proxy => self.object(v)?,
+            Type::Exception | Type::Object | Type::Proxy => self.object(v)?,
             _ => return Err(EncodeError::new(format!("has unsupported type {}", v.type_name()))),
         }
         Ok(())
@@ -225,127 +389,171 @@ impl<'a, 'js> Encoder<'a, 'js> {
     }
 
     fn array(&mut self, v: &Value<'js>) -> EResult {
+        let Some(arr) = v.as_array() else { return self.object(v) };
         self.enter(v)?;
-        let arr = v.as_array().unwrap();
-        self.raw("[");
-        for i in 0..arr.len() {
+        self.put(b"[")?;
+        for i in 0..length(self.ctx, arr) {
             if i > 0 {
-                self.raw(",");
+                self.put(b",")?;
             }
-            let item: Value = arr.get(i).map_err(|_| EncodeError::new("could not be read").at(format!("[{i}]")))?;
+            let item: Value = arr.get(i).map_err(|_| {
+                let _ = self.ctx.catch();
+                EncodeError::new("could not be read").at(format!("[{i}]"))
+            })?;
             self.value(&item).map_err(|e| e.at(format!("[{i}]")))?;
         }
-        self.raw("]");
+        self.put(b"]")?;
         self.stack.pop();
         Ok(())
     }
 
+    /// Map entries (`pair`) or Set values, as returned by the prelude hooks.
     fn list(&mut self, items: Array<'js>, pair: bool) -> EResult {
-        self.raw("[");
-        for i in 0..items.len() {
+        self.put(b"[")?;
+        for i in 0..length(self.ctx, &items) {
             if i > 0 {
-                self.raw(",");
+                self.put(b",")?;
             }
-            let item: Value = items.get(i).map_err(|_| EncodeError::new("could not be read"))?;
+            let item: Value = items.get(i).map_err(|_| {
+                let _ = self.ctx.catch();
+                EncodeError::new("could not be read")
+            })?;
             if pair {
-                let kv = item.as_array().unwrap();
-                self.raw("[");
-                self.value(&kv.get(0).unwrap()).map_err(|e| e.at(format!(".<key {i}>")))?;
-                self.raw(",");
-                self.value(&kv.get(1).unwrap()).map_err(|e| e.at(format!(".<value {i}>")))?;
-                self.raw("]");
+                let entry = || EncodeError::new("has an entry that is not a [key, value] pair").at(format!(".<entry {i}>"));
+                let kv = item.as_array().ok_or_else(entry)?;
+                let (k, v): (Value, Value) = match (kv.get(0), kv.get(1)) {
+                    (Ok(k), Ok(v)) => (k, v),
+                    _ => {
+                        let _ = self.ctx.catch();
+                        return Err(entry());
+                    }
+                };
+                self.put(b"[")?;
+                self.value(&k).map_err(|e| e.at(format!(".<key {i}>")))?;
+                self.put(b",")?;
+                self.value(&v).map_err(|e| e.at(format!(".<value {i}>")))?;
+                self.put(b"]")?;
             } else {
                 self.value(&item).map_err(|e| e.at(format!(".<item {i}>")))?;
             }
         }
-        self.raw("]");
-        Ok(())
+        self.put(b"]")
+    }
+
+    /// A property as a value, or `None` if reading it throws.
+    fn prop(&self, obj: &Object<'js>, key: &str) -> Option<Value<'js>> {
+        match obj.get::<_, Value>(key) {
+            Ok(v) => Some(v),
+            Err(_) => {
+                let _ = self.ctx.catch();
+                None
+            }
+        }
     }
 
     fn error(&mut self, obj: &Object<'js>) -> EResult {
-        let get = |k: &str| obj.get::<_, Option<String>>(k).ok().flatten();
-        self.tagged("e");
-        self.raw(",\"name\":");
-        self.string(&get("name").unwrap_or_else(|| "Error".into()));
-        self.raw(",\"message\":");
-        self.string(&get("message").unwrap_or_default());
-        if let Some(stack) = get("stack") {
-            self.raw(",\"stack\":");
-            self.string(&stack);
+        let text = |me: &Self, k: &str| me.prop(obj, k).filter(Value::is_string);
+        self.tagged("e")?;
+        self.put(b",\"name\":")?;
+        match text(self, "name") {
+            Some(n) => self.js_str(&n).map_err(|e| e.at(".name".into()))?,
+            None => self.put(b"\"Error\"")?,
         }
-        if let Ok(code) = obj.get::<_, Value>("code") {
-            if !code.is_undefined() {
-                self.raw(",\"code\":");
-                self.value(&code).map_err(|e| e.at(".code".into()))?;
-            }
+        self.put(b",\"message\":")?;
+        match text(self, "message") {
+            Some(m) => self.js_str(&m).map_err(|e| e.at(".message".into()))?,
+            None => self.put(b"\"\"")?,
         }
-        if let Ok(cause) = obj.get::<_, Value>("cause") {
-            if !cause.is_undefined() {
-                self.enter(obj.as_value())?;
-                self.raw(",\"cause\":");
-                self.value(&cause).map_err(|e| e.at(".cause".into()))?;
-                self.stack.pop();
-            }
+        if let Some(stack) = text(self, "stack") {
+            self.put(b",\"stack\":")?;
+            self.js_str(&stack).map_err(|e| e.at(".stack".into()))?;
         }
-        self.raw("}");
-        Ok(())
+        if let Some(code) = self.prop(obj, "code").filter(|c| !c.is_undefined()) {
+            self.put(b",\"code\":")?;
+            self.value(&code).map_err(|e| e.at(".code".into()))?;
+        }
+        if let Some(cause) = self.prop(obj, "cause").filter(|c| !c.is_undefined()) {
+            self.enter(obj.as_value())?;
+            self.put(b",\"cause\":")?;
+            self.value(&cause).map_err(|e| e.at(".cause".into()))?;
+            self.stack.pop();
+        }
+        self.put(b"}")
     }
 
-    fn bytes(&mut self, kind: &str, data: &[u8]) {
-        self.tagged("b");
+    fn bytes(&mut self, kind: &str, data: &[u8]) -> EResult {
+        self.tagged("b")?;
         if kind != "Uint8Array" {
-            self.raw(",\"k\":");
-            self.string(kind);
+            self.put(b",\"k\":")?;
+            self.json_str(kind)?;
         }
-        self.raw(",\"v\":\"");
-        let encoded = base64::engine::general_purpose::STANDARD.encode(data);
-        self.raw(&encoded);
-        self.raw("\"}");
+        self.put(b",\"v\":\"")?;
+        let n = data.len().div_ceil(3) * 4;
+        if self.out.len() + n + 2 > self.limit {
+            return Err(self.too_large());
+        }
+        self.out.try_reserve(n).map_err(|_| EncodeError::new("is too large for the sandbox's memory"))?;
+        let start = self.out.len();
+        self.out.resize(start + n, 0);
+        let written = base64::engine::general_purpose::STANDARD.encode_slice(data, &mut self.out[start..]).unwrap_or(0);
+        self.out.truncate(start + written);
+        self.put(b"\"}")
     }
 
     fn object(&mut self, v: &Value<'js>) -> EResult {
         let raw = v.as_raw();
         let ctx_ptr = self.ctx.as_raw().as_ptr();
-        let obj = v.as_object().unwrap();
+        let Some(obj) = v.as_object() else { return Err(EncodeError::new("has an unsupported type")) };
         unsafe {
             if qjs::JS_IsDate(raw) {
-                let get_time: Function = obj.get("getTime").map_err(|_| EncodeError::new("is a broken Date"))?;
-                let t: f64 = get_time
-                    .call((rquickjs::function::This(v.clone()),))
-                    .map_err(|_| EncodeError::new("is a broken Date"))?;
-                self.tagged("d");
-                self.raw(",\"v\":");
+                let get_time: Function = obj.get("getTime").map_err(|_| {
+                    let _ = self.ctx.catch();
+                    EncodeError::new("is a broken Date")
+                })?;
+                let t: f64 = get_time.call((rquickjs::function::This(v.clone()),)).map_err(|_| {
+                    let _ = self.ctx.catch();
+                    EncodeError::new("is a broken Date")
+                })?;
+                self.tagged("d")?;
+                self.put(b",\"v\":")?;
                 if t.is_finite() {
-                    self.raw(&(t as i64).to_string());
+                    self.put((t as i64).to_string().as_bytes())?;
                 } else {
-                    self.raw("null");
+                    self.put(b"null")?;
                 }
-                self.raw("}");
-                return Ok(());
+                return self.put(b"}");
             }
             if qjs::JS_IsError(raw) {
                 return self.error(obj);
             }
             if qjs::JS_IsRegExp(raw) {
-                let src: String = obj.get("source").unwrap_or_default();
-                let flags: String = obj.get("flags").unwrap_or_default();
-                self.tagged("re");
-                self.raw(",\"src\":");
-                self.string(&src);
-                self.raw(",\"flags\":");
-                self.string(&flags);
-                self.raw("}");
-                return Ok(());
+                let src = self.prop(obj, "source").filter(Value::is_string);
+                let flags = self.prop(obj, "flags").filter(Value::is_string);
+                self.tagged("re")?;
+                self.put(b",\"src\":")?;
+                match src {
+                    Some(s) => self.js_str(&s)?,
+                    None => self.put(b"\"\"")?,
+                }
+                self.put(b",\"flags\":")?;
+                match flags {
+                    Some(f) => self.js_str(&f)?,
+                    None => self.put(b"\"\"")?,
+                }
+                return self.put(b"}");
             }
             if qjs::JS_IsMap(raw) || qjs::JS_IsSet(raw) {
                 let is_map = qjs::JS_IsMap(raw);
                 self.enter(v)?;
                 let f = if is_map { &self.h.entries } else { &self.h.values };
-                let items: Array = f.call((v.clone(),)).map_err(|_| EncodeError::new("could not be iterated"))?;
-                self.tagged(if is_map { "m" } else { "s" });
-                self.raw(",\"v\":");
+                let items: Array = f.call((v.clone(),)).map_err(|_| {
+                    let _ = self.ctx.catch();
+                    EncodeError::new("could not be iterated")
+                })?;
+                self.tagged(if is_map { "m" } else { "s" })?;
+                self.put(b",\"v\":")?;
                 self.list(items, is_map)?;
-                self.raw("}");
+                self.put(b"}")?;
                 self.stack.pop();
                 return Ok(());
             }
@@ -353,8 +561,7 @@ impl<'a, 'js> Encoder<'a, 'js> {
                 let mut size = 0usize;
                 let ptr = qjs::JS_GetArrayBuffer(ctx_ptr, &mut size as *mut usize as *mut _, raw);
                 let data = if ptr.is_null() { &[][..] } else { std::slice::from_raw_parts(ptr, size) };
-                self.bytes("ArrayBuffer", data);
-                return Ok(());
+                return self.bytes("ArrayBuffer", data);
             }
             let ta = qjs::JS_GetTypedArrayType(raw);
             if ta >= 0 {
@@ -373,12 +580,15 @@ impl<'a, 'js> Encoder<'a, 'js> {
                     _ => "Float64Array",
                 };
                 let view: TypedArray<u8> = if ta == 2 {
-                    TypedArray::from_value(v.clone()).map_err(|_| EncodeError::new("is a detached buffer"))?
+                    TypedArray::from_value(v.clone())
                 } else {
-                    self.h.view_bytes.call((v.clone(),)).map_err(|_| EncodeError::new("is a detached buffer"))?
-                };
-                self.bytes(kind, bytes_of(&view));
-                return Ok(());
+                    self.h.view_bytes.call((v.clone(),))
+                }
+                .map_err(|_| {
+                    let _ = self.ctx.catch();
+                    EncodeError::new("is a detached buffer")
+                })?;
+                return self.bytes(kind, bytes_of(&view));
             }
             if qjs::JS_IsPromise(raw) {
                 return Err(EncodeError::new("is a Promise, which cannot cross the sandbox boundary (missing `await`?)"));
@@ -386,134 +596,292 @@ impl<'a, 'js> Encoder<'a, 'js> {
         }
 
         self.enter(v)?;
-        let mut keys: Vec<String> = Vec::new();
-        for key in obj.keys::<String>() {
-            keys.push(key.map_err(|_| EncodeError::new("has an unreadable key"))?);
+        // An own `$t` key would read as a tag, so such objects are wrapped.
+        let mut escaped = false;
+        for key in obj.keys::<Atom>() {
+            let key = self.key(key)?;
+            if key.as_str() == "$t" {
+                escaped = true;
+                break;
+            }
         }
-        let escaped = keys.iter().any(|k| k == "$t");
         if escaped {
-            self.raw(r#"{"$t":"o","v":"#);
+            self.put(br#"{"$t":"o","v":"#)?;
         }
-        self.raw("{");
+        self.put(b"{")?;
         let mut first = true;
-        for key in &keys {
-            let item: Value = obj.get(key.as_str()).map_err(|_| EncodeError::new("could not be read").at(key_seg(key)))?;
+        for key in obj.keys::<Atom>() {
+            let atom = key.map_err(|_| {
+                let _ = self.ctx.catch();
+                EncodeError::new("has an unreadable key")
+            })?;
+            let name = self.key(Ok(atom.clone()))?;
+            let item: Value = obj.get(atom).map_err(|_| {
+                let _ = self.ctx.catch();
+                EncodeError::new("could not be read").at(key_seg(name.as_str()))
+            })?;
             if !first {
-                self.raw(",");
+                self.put(b",")?;
             }
             first = false;
-            self.string(key);
-            self.raw(":");
-            self.value(&item).map_err(|e| e.at(key_seg(key)))?;
+            self.json_str(name.as_str()).map_err(|e| e.at(key_seg(name.as_str())))?;
+            self.put(b":")?;
+            self.value(&item).map_err(|e| e.at(key_seg(name.as_str())))?;
         }
-        self.raw("}");
+        self.put(b"}")?;
         if escaped {
-            self.raw("}");
+            self.put(b"}")?;
         }
         self.stack.pop();
         Ok(())
+    }
+
+    fn key(&self, key: rquickjs::Result<Atom<'js>>) -> Result<Utf8<'js>, EncodeError> {
+        let unreadable = || EncodeError::new("has an unreadable key");
+        let atom = key.map_err(|_| {
+            let _ = self.ctx.catch();
+            unreadable()
+        })?;
+        let s = atom.to_js_string().map_err(|_| {
+            let _ = self.ctx.catch();
+            unreadable()
+        })?;
+        match utf8(self.ctx, &s.into_value()) {
+            Some(Ok(u)) => Ok(u),
+            Some(Err(StrError::NotUtf8)) => Err(EncodeError::new("has a key that is not a valid string")),
+            _ => Err(unreadable()),
+        }
     }
 }
 
 // ---- decode -------------------------------------------------------------------
 
-pub fn decode<'js>(ctx: &Ctx<'js>, j: &Json, h: &Helpers<'js>) -> rquickjs::Result<Value<'js>> {
-    Ok(match j {
-        Json::Null => Value::new_null(ctx.clone()),
-        Json::Bool(b) => Value::new_bool(ctx.clone(), *b),
-        Json::Number(n) => match n.as_i64() {
-            Some(i) if i >= i32::MIN as i64 && i <= i32::MAX as i64 => Value::new_int(ctx.clone(), i as i32),
-            _ => Value::new_number(ctx.clone(), n.as_f64().unwrap_or(f64::NAN)),
-        },
-        Json::String(s) => rquickjs::String::from_str(ctx.clone(), s)?.into_value(),
-        Json::Array(items) => {
-            let arr = Array::new(ctx.clone())?;
-            for (i, item) in items.iter().enumerate() {
-                arr.set(i, decode(ctx, item, h)?)?;
-            }
-            arr.into_value()
-        }
-        Json::Object(map) => match map.get("$t").and_then(Json::as_str) {
-            None => plain_object(ctx, map, h)?,
-            Some(tag) => decode_tagged(ctx, tag, map, h)?,
-        },
-    })
+/// Build a JS value from tagged JSON text. Values are created as the text is
+/// read, so memory use is the JS value itself (bounded by QuickJS's limit,
+/// which throws a catchable error) rather than a parse tree several times the
+/// size of the input. Properties are defined, not assigned, so keys like
+/// `__proto__` and setters on built-in prototypes don't change the result.
+pub fn decode<'js>(ctx: &Ctx<'js>, json: &str, h: &Helpers<'js>) -> Result<Value<'js>, String> {
+    let mut de = serde_json::Deserializer::from_str(json);
+    let seed = Seed { ctx, h, plain: false };
+    let v = seed.deserialize(&mut de).map_err(|e| {
+        let _ = ctx.catch();
+        e.to_string()
+    })?;
+    de.end().map_err(|e| e.to_string())?;
+    Ok(v)
 }
 
-fn plain_object<'js>(
-    ctx: &Ctx<'js>,
-    map: &serde_json::Map<String, Json>,
-    h: &Helpers<'js>,
-) -> rquickjs::Result<Value<'js>> {
-    let obj = Object::new(ctx.clone())?;
-    for (k, v) in map {
-        obj.set(k.as_str(), decode(ctx, v, h)?)?;
+#[derive(Clone, Copy)]
+struct Seed<'a, 'js> {
+    ctx: &'a Ctx<'js>,
+    h: &'a Helpers<'js>,
+    /// Read an object's keys literally, without looking for a tag (the
+    /// payload of an `o` tag).
+    plain: bool,
+}
+
+impl<'a, 'js> Seed<'a, 'js> {
+    fn child(self) -> Self {
+        Seed { plain: false, ..self }
     }
-    Ok(obj.into_value())
 }
 
-fn decode_tagged<'js>(
-    ctx: &Ctx<'js>,
-    tag: &str,
-    map: &serde_json::Map<String, Json>,
-    h: &Helpers<'js>,
-) -> rquickjs::Result<Value<'js>> {
-    let v = map.get("v").unwrap_or(&Json::Null);
-    let s = |k: &str| map.get(k).and_then(Json::as_str).unwrap_or("");
+/// Turn a failed QuickJS operation (usually out of memory) into a decode
+/// error carrying the exception's message, and clear the exception.
+fn js<E: de::Error>(ctx: &Ctx<'_>) -> E {
+    let exc = ctx.catch();
+    let msg = exc.as_object().and_then(|o| o.get::<_, String>("message").ok());
+    E::custom(msg.unwrap_or_else(|| "out of memory".into()))
+}
+
+fn define<'js, E: de::Error>(ctx: &Ctx<'js>, obj: &Object<'js>, key: impl rquickjs::IntoAtom<'js>, v: Value<'js>) -> Result<(), E> {
+    obj.prop(key, Property::from(v).writable().enumerable().configurable()).map_err(|_| js(ctx))
+}
+
+impl<'de, 'a, 'js> DeserializeSeed<'de> for Seed<'a, 'js> {
+    type Value = Value<'js>;
+
+    fn deserialize<D: de::Deserializer<'de>>(self, d: D) -> Result<Value<'js>, D::Error> {
+        d.deserialize_any(self)
+    }
+}
+
+impl<'de, 'a, 'js> Visitor<'de> for Seed<'a, 'js> {
+    type Value = Value<'js>;
+
+    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("a tagged JSON value")
+    }
+
+    fn visit_unit<E: de::Error>(self) -> Result<Value<'js>, E> {
+        Ok(Value::new_null(self.ctx.clone()))
+    }
+
+    fn visit_bool<E: de::Error>(self, b: bool) -> Result<Value<'js>, E> {
+        Ok(Value::new_bool(self.ctx.clone(), b))
+    }
+
+    fn visit_i64<E: de::Error>(self, i: i64) -> Result<Value<'js>, E> {
+        Ok(match i32::try_from(i) {
+            Ok(n) => Value::new_int(self.ctx.clone(), n),
+            Err(_) => Value::new_number(self.ctx.clone(), i as f64),
+        })
+    }
+
+    fn visit_u64<E: de::Error>(self, u: u64) -> Result<Value<'js>, E> {
+        Ok(match i32::try_from(u) {
+            Ok(n) => Value::new_int(self.ctx.clone(), n),
+            Err(_) => Value::new_number(self.ctx.clone(), u as f64),
+        })
+    }
+
+    fn visit_f64<E: de::Error>(self, f: f64) -> Result<Value<'js>, E> {
+        Ok(Value::new_number(self.ctx.clone(), f))
+    }
+
+    fn visit_str<E: de::Error>(self, s: &str) -> Result<Value<'js>, E> {
+        Ok(rquickjs::String::from_str(self.ctx.clone(), s).map_err(|_| js(self.ctx))?.into_value())
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Value<'js>, A::Error> {
+        let arr = Array::new(self.ctx.clone()).map_err(|_| js(self.ctx))?;
+        let mut i = 0u32;
+        while let Some(item) = seq.next_element_seed(self.child())? {
+            define(self.ctx, &arr, i, item)?;
+            i += 1;
+        }
+        Ok(arr.into_value())
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Value<'js>, A::Error> {
+        let obj = Object::new(self.ctx.clone()).map_err(|_| js(self.ctx))?;
+        let Some(first) = map.next_key::<Key>()? else { return Ok(obj.into_value()) };
+        if !self.plain && first.0 == "$t" {
+            let tag: Key = map.next_value()?;
+            return tagged(self, &tag.0, map);
+        }
+        let v = map.next_value_seed(self.child())?;
+        define(self.ctx, &obj, &*first.0, v)?;
+        while let Some(k) = map.next_key::<Key>()? {
+            let v = map.next_value_seed(self.child())?;
+            define(self.ctx, &obj, &*k.0, v)?;
+        }
+        Ok(obj.into_value())
+    }
+}
+
+/// A string that borrows from the input when it has no escapes.
+struct Key<'de>(Cow<'de, str>);
+
+impl<'de> de::Deserialize<'de> for Key<'de> {
+    fn deserialize<D: de::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct V;
+        impl<'de> Visitor<'de> for V {
+            type Value = Key<'de>;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a string")
+            }
+            fn visit_borrowed_str<E: de::Error>(self, s: &'de str) -> Result<Key<'de>, E> {
+                Ok(Key(Cow::Borrowed(s)))
+            }
+            fn visit_str<E: de::Error>(self, s: &str) -> Result<Key<'de>, E> {
+                Ok(Key(Cow::Owned(s.to_owned())))
+            }
+        }
+        d.deserialize_str(V)
+    }
+}
+
+/// The rest of a tagged object, after `"$t": tag`.
+fn tagged<'de, 'a, 'js, A: MapAccess<'de>>(seed: Seed<'a, 'js>, tag: &str, mut map: A) -> Result<Value<'js>, A::Error> {
+    let ctx = seed.ctx;
+    let h = seed.h;
+    let mut v: Option<Value<'js>> = None;
+    let mut bytes: Option<Vec<u8>> = None;
+    let mut fields: Vec<(String, Value<'js>)> = Vec::new();
+    while let Some(k) = map.next_key::<Key>()? {
+        match (tag, &*k.0) {
+            ("b", "v") => {
+                let b64: Key = map.next_value()?;
+                let mut buf = Vec::new();
+                let n = base64::decoded_len_estimate(b64.0.len());
+                buf.try_reserve(n).map_err(|_| de::Error::custom("the value is too large for the sandbox's memory"))?;
+                base64::engine::general_purpose::STANDARD
+                    .decode_vec(b64.0.as_bytes(), &mut buf)
+                    .map_err(|_| de::Error::custom("bytes are not valid base64"))?;
+                bytes = Some(buf);
+            }
+            ("o", "v") => v = Some(map.next_value_seed(Seed { plain: true, ..seed })?),
+            (_, "v") => v = Some(map.next_value_seed(seed.child())?),
+            (_, "k" | "src" | "flags" | "name" | "message" | "stack" | "code" | "cause" | "data") => {
+                fields.push((k.0.into_owned(), map.next_value_seed(seed.child())?));
+            }
+            _ => {
+                map.next_value::<IgnoredAny>()?;
+            }
+        }
+    }
+    let field = |name: &str| fields.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
+    // String fields go to the prelude as JS values, so they're never copied into Rust.
+    let text = |name: &str, default: &str| -> Result<Value<'js>, A::Error> {
+        match field(name).filter(Value::is_string) {
+            Some(v) => Ok(v),
+            None => Ok(rquickjs::String::from_str(ctx.clone(), default).map_err(|_| js(ctx))?.into_value()),
+        }
+    };
+    let undefined = || Value::new_undefined(ctx.clone());
     Ok(match tag {
-        "u" => Value::new_undefined(ctx.clone()),
-        "n" => Value::new_float(
-            ctx.clone(),
-            match v.as_str().unwrap_or("NaN") {
-                "Infinity" => f64::INFINITY,
-                "-Infinity" => f64::NEG_INFINITY,
-                "-0" => -0.0,
-                _ => f64::NAN,
-            },
-        ),
-        "bi" => h.mk_bigint.call((v.as_str().unwrap_or("0"),))?,
+        "u" => undefined(),
+        "n" => {
+            let which = v.as_ref().and_then(|v| utf8(ctx, v)?.ok().map(|s| s.as_str().to_owned()));
+            Value::new_float(
+                ctx.clone(),
+                match which.as_deref() {
+                    Some("Infinity") => f64::INFINITY,
+                    Some("-Infinity") => f64::NEG_INFINITY,
+                    Some("-0") => -0.0,
+                    _ => f64::NAN,
+                },
+            )
+        }
+        "bi" => h.mk_bigint.call((v.unwrap_or_else(undefined),)).map_err(|_| js(ctx))?,
         "d" => unsafe {
-            let ms = v.as_f64().unwrap_or(f64::NAN);
-            let raw = qjs::JS_NewDate(ctx.as_raw().as_ptr(), ms);
-            Value::from_raw(ctx.clone(), raw)
+            let ms = v.and_then(|v| v.as_number()).unwrap_or(f64::NAN);
+            Value::from_raw(ctx.clone(), qjs::JS_NewDate(ctx.as_raw().as_ptr(), ms))
         },
         "b" => {
-            let bytes = base64::engine::general_purpose::STANDARD.decode(v.as_str().unwrap_or("")).unwrap_or_default();
-            let kind = map.get("k").and_then(Json::as_str).unwrap_or("Uint8Array");
-            let u8s = TypedArray::<u8>::new(ctx.clone(), bytes)?;
-            match kind {
+            let kind = field("k").and_then(|k| utf8(ctx, &k)?.ok().map(|s| s.as_str().to_owned()));
+            let u8s = TypedArray::<u8>::new_copy(ctx.clone(), bytes.unwrap_or_default()).map_err(|_| js(ctx))?;
+            match kind.as_deref().unwrap_or("Uint8Array") {
                 "Uint8Array" => u8s.into_value(),
-                "ArrayBuffer" => u8s.arraybuffer()?.into_value(),
-                other => h.mk_view.call((other, u8s))?,
+                "ArrayBuffer" => u8s.arraybuffer().map_err(|_| js(ctx))?.into_value(),
+                other => h.mk_view.call((other, u8s)).map_err(|_| js(ctx))?,
             }
         }
         "m" | "s" => {
             let arr = match v {
-                Json::Array(_) => decode(ctx, v, h)?,
-                _ => Array::new(ctx.clone())?.into_value(),
+                Some(a) if a.is_array() => a,
+                _ => Array::new(ctx.clone()).map_err(|_| js(ctx))?.into_value(),
             };
-            if tag == "m" { h.mk_map.call((arr,))? } else { h.mk_set.call((arr,))? }
+            let f = if tag == "m" { &h.mk_map } else { &h.mk_set };
+            f.call((arr,)).map_err(|_| js(ctx))?
         }
-        "re" => h.mk_regexp.call((s("src"), s("flags")))?,
+        "re" => h.mk_regexp.call((text("src", "")?, text("flags", "")?)).map_err(|_| js(ctx))?,
         "e" => {
-            let mut extra = serde_json::Map::new();
+            let extra = Object::new(ctx.clone()).map_err(|_| js(ctx))?;
             for k in ["code", "cause", "data"] {
-                if let Some(x) = map.get(k) {
-                    extra.insert(k.into(), x.clone());
+                if let Some(x) = field(k) {
+                    define(ctx, &extra, k, x)?;
                 }
             }
-            let extra = plain_object(ctx, &extra, h)?;
-            let stack = map.get("stack").and_then(Json::as_str);
-            let stack = match stack {
-                Some(st) => rquickjs::String::from_str(ctx.clone(), st)?.into_value(),
-                None => Value::new_undefined(ctx.clone()),
-            };
-            h.mk_error.call((s("name"), s("message"), stack, extra))?
+            let stack = field("stack").unwrap_or_else(undefined);
+            h.mk_error.call((text("name", "Error")?, text("message", "")?, stack, extra)).map_err(|_| js(ctx))?
         }
         "o" => match v {
-            Json::Object(inner) => plain_object(ctx, inner, h)?,
-            _ => plain_object(ctx, map, h)?,
+            Some(o) if o.is_object() => o,
+            _ => Object::new(ctx.clone()).map_err(|_| js(ctx))?.into_value(),
         },
-        _ => plain_object(ctx, map, h)?,
+        _ => return Err(de::Error::custom(format!("unknown value tag {tag:?}"))),
     })
 }

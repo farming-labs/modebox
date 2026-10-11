@@ -55,12 +55,12 @@ async fn staged_changes_are_capped_and_old_versions_freed() {
 async fn scratch_space_is_capped() {
     let v = Vfs::new(VfsConfig::workspace(workspace("scratch")).unwrap()).unwrap();
     let r = run(&v, r#"
-        const big = 'x'.repeat(16 << 20);
+        const big = 'x'.repeat(15 << 20); // under the 16 MiB value limit with the call's envelope
         let written = 0, error;
         try { for (let i = 0; i < 8; i++) { await fs.put({ key: `tmp/chunk${i}`, body: big }); written++ } }
         catch (e) { error = e.code }
         [written, error, (await fs.get({ key: 'tmp/chunk0', range: { start: 0, end: 3 } }))]
     "#).await;
-    // 64 MiB of scratch: four 16 MiB chunks fit, the fifth doesn't.
+    // 64 MiB of scratch: four 15 MiB chunks fit, the fifth doesn't.
     assert_eq!(r, serde_json::json!([4, "ENOSPC", "xxx"]));
 }
