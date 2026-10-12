@@ -117,13 +117,25 @@ jobs:
         run: |
           # Prereleases (X.Y.Z-rc.1) go to the `next` dist-tag, not `latest`.
           tag=latest; [[ "$GITHUB_REF_NAME" == *-* ]] && tag=next
+          version="${GITHUB_REF_NAME#v}"
+          # Versions already on npm are skipped, so re-running after a partial
+          # failure carries on from there. npm takes a few minutes to list a
+          # new version, so a re-run sooner than that can still hit "cannot
+          # publish over the previously published versions".
+          publish() {
+            if curl -sf -o /dev/null "https://registry.npmjs.org/$1/$version"; then
+              echo "$1@$version is already on npm"
+            else
+              (cd packages/$1 && npm publish --access public --provenance --tag "$tag")
+            fi
+          }
           for p in darwin-arm64 darwin-x64 linux-x64-gnu linux-arm64-gnu; do
             cp bindings/npm-$p/* packages/modebox-$p/modebox.node
             cp LICENSE packages/modebox-$p/
-            (cd packages/modebox-$p && npm publish --access public --provenance --tag "$tag")
+            publish modebox-$p
           done
           cp LICENSE README.md packages/modebox/
-          cd packages/modebox && npm publish --access public --provenance --tag "$tag"
+          publish modebox
 
   github:
     name: GitHub release
