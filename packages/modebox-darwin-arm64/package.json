@@ -1,6 +1,6 @@
 {
   "name": "modebox-darwin-arm64",
-  "version": "0.1.1-rc.1",
+  "version": "0.1.1-rc.2",
   "description": "The modebox native binding for macOS on Apple silicon. Installed by the `modebox` package; don't depend on it directly.",
   "main": "modebox.node",
   "files": [
