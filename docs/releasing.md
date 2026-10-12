@@ -27,15 +27,17 @@ If the npm job fails partway (one package's trusted publisher is misconfigured, 
 
 ## Credentials
 
-crates.io uses a repository secret (Settings → Secrets and variables → Actions): `CARGO_REGISTRY_TOKEN`, a crates.io API token with the `publish-new` and `publish-update` scopes.
+Both registries use trusted publishing, so the repository stores no publish tokens. Every crate and npm package trusts `release.yml` in `farming-labs/modebox`, and at publish time the job's OIDC identity is exchanged for a short-lived token. A crate or package must already exist before it can trust a workflow, so a new one (a new platform package, say) is published once by hand first.
 
-npm uses [trusted publishing](https://docs.npmjs.com/trusted-publishers), so there's no npm token. Each of the five packages trusts `release.yml` in `farming-labs/modebox`, and the workflow's OIDC identity is exchanged for a short-lived token at publish time. To set that up, or to add a package, run this as a maintainer with 2FA (npm 11.15 or later):
+**crates.io** ([docs](https://crates.io/docs/trusted-publishing)): on `modebox-core` and `modebox`, Settings → Trusted Publishing → Add → GitHub, with owner `farming-labs`, repository `modebox`, workflow `release.yml` and no environment. The workflow gets its token from `rust-lang/crates-io-auth-action`. Once a release has gone out this way, "Require trusted publishing for all new versions" on the same page makes crates.io reject API tokens for that crate.
+
+**npm** ([docs](https://docs.npmjs.com/trusted-publishers)): each of the five packages has a GitHub Actions trusted publisher with the same values. Its allowed actions must include publishing directly, because the workflow runs `npm publish`; with staged publishing alone, the publish fails with a 404. To set them all up from the command line, run this as a maintainer with 2FA (npm 11.15 or later; a token that bypasses 2FA is refused):
 
 ```bash
 for p in modebox-darwin-arm64 modebox-darwin-x64 modebox-linux-x64-gnu modebox-linux-arm64-gnu modebox; do npm trust github "$p" --repo farming-labs/modebox --file release.yml --allow-publish --yes; sleep 2; done
 ```
 
-The same setting is under each package's Settings → Trusted publishing on npmjs.com, and `npm trust list <package>` shows it. npm only lets existing packages trust a workflow, so a new package (a new platform, say) has to be published once by hand first.
+The same setting is under each package's Settings → Trusted Publisher on npmjs.com.
 
 ## Compatibility
 
