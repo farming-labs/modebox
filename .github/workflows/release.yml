@@ -98,20 +98,22 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      id-token: write # npm provenance
+      id-token: write # npm trusted publishing and provenance
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or later.
+      - run: npm install -g npm@^11.5.1
       - uses: actions/download-artifact@v8
         with:
           pattern: npm-*
           path: bindings
+      # No token: each package trusts this workflow, and npm exchanges the
+      # job's OIDC identity for a short-lived publish token (docs/releasing.md).
       - name: Publish the platform packages, then modebox
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           # Prereleases (X.Y.Z-rc.1) go to the `next` dist-tag, not `latest`.
           tag=latest; [[ "$GITHUB_REF_NAME" == *-* ]] && tag=next

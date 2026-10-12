@@ -23,14 +23,17 @@ Steps 3–5 only run for tags. To rehearse the builds, run the workflow by hand:
 
 A version with a suffix (`0.2.0-rc.1`) is a prerelease: a prerelease on GitHub, and the `next` dist-tag on npm, so `npm install modebox` keeps getting the last stable version.
 
-## Secrets
+## Credentials
 
-The workflow needs two repository secrets (Settings → Secrets and variables → Actions):
+crates.io uses a repository secret (Settings → Secrets and variables → Actions): `CARGO_REGISTRY_TOKEN`, a crates.io API token with the `publish-new` and `publish-update` scopes.
 
-- `CARGO_REGISTRY_TOKEN`: a crates.io API token with the `publish-new` and `publish-update` scopes.
-- `NPM_TOKEN`: an npm automation token for an account that can publish `modebox` and the four platform packages.
+npm uses [trusted publishing](https://docs.npmjs.com/trusted-publishers), so there's no npm token. Each of the five packages trusts `release.yml` in `farming-labs/modebox`, and the workflow's OIDC identity is exchanged for a short-lived token at publish time. To set that up, or to add a package, run this as a maintainer with 2FA (npm 11.15 or later):
 
-After the first release, both registries can switch to trusted publishing from this workflow, which needs no stored tokens.
+```bash
+for p in modebox-darwin-arm64 modebox-darwin-x64 modebox-linux-x64-gnu modebox-linux-arm64-gnu modebox; do npm trust github "$p" --repo farming-labs/modebox --file release.yml --allow-publish --yes; sleep 2; done
+```
+
+The same setting is under each package's Settings → Trusted publishing on npmjs.com, and `npm trust list <package>` shows it. npm only lets existing packages trust a workflow, so a new package (a new platform, say) has to be published once by hand first.
 
 ## Compatibility
 
