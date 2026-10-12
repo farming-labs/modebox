@@ -82,13 +82,21 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write # crates.io trusted publishing
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      # No stored token: both crates trust this workflow, and the job's OIDC
+      # identity is exchanged for a crates.io token that expires after 30
+      # minutes and is revoked when the job ends (docs/releasing.md).
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: crates-io
       # modebox-core first, then modebox; modebox-node isn't published.
       - run: cargo publish --workspace --locked
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-io.outputs.token }}
 
   npm:
     name: publish npm packages
