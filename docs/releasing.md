@@ -23,6 +23,8 @@ Steps 3–5 only run for tags. To rehearse the builds, run the workflow by hand:
 
 A version with a suffix (`0.2.0-rc.1`) is a prerelease: a prerelease on GitHub, and the `next` dist-tag on npm, so `npm install modebox` keeps getting the last stable version.
 
+If the npm job fails partway (one package's trusted publisher is misconfigured, say), fix the cause and re-run the failed jobs from the run's page. Packages already on npm at that version are skipped. Wait a few minutes first, since npm takes a while to list a version it just accepted.
+
 ## Credentials
 
 crates.io uses a repository secret (Settings → Secrets and variables → Actions): `CARGO_REGISTRY_TOKEN`, a crates.io API token with the `publish-new` and `publish-update` scopes.
