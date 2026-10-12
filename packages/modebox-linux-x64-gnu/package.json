@@ -1,6 +1,6 @@
 {
   "name": "modebox-linux-x64-gnu",
-  "version": "0.1.1-rc.2",
+  "version": "0.1.1-rc.3",
   "description": "The modebox native binding for Linux x64 (glibc). Installed by the `modebox` package; don't depend on it directly.",
   "main": "modebox.node",
   "files": [

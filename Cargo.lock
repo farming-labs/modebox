@@ -1841,7 +1841,7 @@ dependencies = [
 
 [[package]]
 name = "modebox"
-version = "0.1.1-rc.2"
+version = "0.1.1-rc.3"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1858,7 +1858,7 @@ dependencies = [
 
 [[package]]
 name = "modebox-core"
-version = "0.1.1-rc.2"
+version = "0.1.1-rc.3"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -1892,7 +1892,7 @@ dependencies = [
 
 [[package]]
 name = "modebox-node"
-version = "0.1.1-rc.2"
+version = "0.1.1-rc.3"
 dependencies = [
  "modebox-core",
  "napi",
