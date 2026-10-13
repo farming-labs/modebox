@@ -2,11 +2,12 @@ import { CodeTabs, type CodeTab } from "../components/code-tabs";
 import { FigPause } from "../components/fig-pause";
 import { FigRuntime } from "../components/fig-runtime";
 import { InstallSwitch } from "../components/install-switch";
+import { GitHubIcon } from "../components/github-icon";
 import { MemoryField } from "../components/memory-field";
+import { REPO, SiteFooter, SiteHeader } from "../components/site-chrome";
 import { highlight, type Lang } from "../lib/highlight";
 
-const REPO = "https://github.com/farming-labs/modebox";
-const GUIDE = `${REPO}/blob/main/docs/integrations.md`;
+const GUIDE = "/setup";
 
 // The features, laid out like a memory map: address, segment, what it does, what it costs.
 const MAP = [
@@ -107,16 +108,6 @@ const TABS: CodeTab[] = SOURCES.map(({ lang, ...tab }) => ({ ...tab, html: highl
 
 const CLIENTS = ["Claude Code", "opencode", "Codex", "Cursor", "Node", "Python", "Rust"];
 
-function Logo() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-      <rect x="0.5" y="0.5" width="17" height="17" rx="3" fill="none" stroke="currentColor" />
-      <rect x="6" y="5" width="2" height="8" fill="currentColor" />
-      <rect x="10" y="5" width="2" height="8" fill="currentColor" />
-    </svg>
-  );
-}
-
 function Label({ n, children }: { n: string; children: string }) {
   return (
     <p className="label">
@@ -128,16 +119,7 @@ function Label({ n, children }: { n: string; children: string }) {
 export default function HomePage() {
   return (
     <div className="frame">
-      <header className="top">
-        <a className="brand" href="/">
-          <Logo />
-          <span>modebox</span>
-        </a>
-        <nav>
-          <a href={GUIDE}>Setup guide</a>
-          <a href={REPO}>GitHub ↗</a>
-        </nav>
-      </header>
+      <SiteHeader />
 
       <main>
         <section className="hero corners">
@@ -151,7 +133,10 @@ export default function HomePage() {
             <InstallSwitch />
             <p className="hero-links">
               <a href={GUIDE}>Setup guide →</a>
-              <a href={REPO}>GitHub →</a>
+              <a href={REPO} className="gh">
+                <GitHubIcon size={13} />
+                GitHub →
+              </a>
             </p>
           </div>
           <MemoryField />
@@ -214,12 +199,7 @@ export default function HomePage() {
         </section>
       </main>
 
-      <footer className="bottom">
-        <span>end of snapshot · MIT · farming-labs</span>
-        <span>
-          Built with <a href="https://farmjs.dev">Farm.js</a> · <a href={REPO}>GitHub</a>
-        </span>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

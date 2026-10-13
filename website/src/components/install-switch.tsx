@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CopyButton } from "./copy-button";
+import { ShellCode } from "./shell-code";
 
 const OPTIONS = [
   { id: "npm", cmd: "npm install modebox" },
@@ -30,9 +31,7 @@ export function InstallSwitch() {
         ))}
       </div>
       <div className="switch-cmd">
-        <code>
-          <span className="prompt">$</span> {cmd}
-        </code>
+        <ShellCode cmd={cmd} />
         <CopyButton text={cmd} />
       </div>
     </div>

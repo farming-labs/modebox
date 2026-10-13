@@ -279,9 +279,8 @@ h1 {
   padding: 7px 7px 7px 14px;
 }
 
-.switch-cmd code {
-  font-size: 13px;
-  color: var(--fg);
+.switch-cmd .sh {
+  font-size: 13.5px;
 }
 
 .switch-cmd .prompt,
@@ -907,13 +906,13 @@ h1 {
 
 .rt-wall {
   fill: none;
-  stroke: var(--muted);
-  stroke-width: 2;
+  stroke: #474747;
+  stroke-width: 1.5;
 }
 
 .rt-lock {
   fill: none;
-  stroke: var(--fg);
+  stroke: var(--muted);
   stroke-width: 1.5;
 }
 
@@ -930,63 +929,82 @@ h1 {
 }
 
 @keyframes rt-gate {
-  0%, 17% { stroke: #4a4a4a; }
-  18%, 24% { stroke: var(--fg); }
-  25%, 75% { stroke: #4a4a4a; }
-  76%, 94% { stroke: var(--fg); }
+  0%, 15% { stroke: #4a4a4a; }
+  16%, 22% { stroke: #9a9a9a; }
+  24%, 71% { stroke: #4a4a4a; }
+  72%, 94% { stroke: #9a9a9a; }
   96%, 100% { stroke: #4a4a4a; }
 }
 
-.rt-dot {
-  fill: var(--fg);
+/* A request is a short bright pulse running along its wire. With
+   pathLength="100", a 14-unit dash travels from offset 14 (just before the
+   start) to -100 (just past the end), whatever the wire's real length. */
+.rt-pulse {
+  fill: none;
+  stroke: var(--fg);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 14 200;
+  stroke-dashoffset: 14;
   opacity: 0;
+  animation: var(--rt) linear infinite;
 }
 
-.rt-dot-1 { animation: rt-dot-1 var(--rt) linear infinite; }
-.rt-dot-1b { animation: rt-dot-1b var(--rt) linear infinite; fill: var(--muted); }
-.rt-dot-2 { animation: rt-dot-2 var(--rt) linear infinite; }
-.rt-dot-3 { animation: rt-dot-3 var(--rt) linear infinite; }
-
-@keyframes rt-dot-1 {
-  0% { opacity: 0; transform: translate(0, 0); }
-  2% { opacity: 1; transform: translate(0, 0); }
-  8% { transform: translate(78px, 0); }
-  11% { transform: translate(78px, 45px); }
-  18% { transform: translate(234px, 45px); }
-  21% { transform: translate(234px, 45px); }
-  25% { transform: translate(385px, 45px); }
-  27% { transform: translate(414px, 45px); }
-  30% { transform: translate(414px, -36px); }
-  31.5% { opacity: 1; transform: translate(448px, -36px); }
-  32%, 100% { opacity: 0; transform: translate(448px, -36px); }
+.rt-pulse-back {
+  stroke: var(--muted);
+  stroke-width: 2;
 }
 
-@keyframes rt-dot-1b {
-  0%, 32% { opacity: 0; transform: translate(0, 0); }
-  32.5% { opacity: 1; transform: translate(0, 0); }
-  34% { transform: translate(-34px, 0); }
-  35.5% { transform: translate(-34px, 81px); }
-  39% { transform: translate(-370px, 81px); }
-  40% { transform: translate(-370px, 36px); }
-  41.5% { opacity: 1; transform: translate(-448px, 36px); }
-  42%, 100% { opacity: 0; transform: translate(-448px, 36px); }
+.rt-p1 { animation-name: rt-p1; }
+.rt-p1b { animation-name: rt-p1b; }
+.rt-p1c { animation-name: rt-p1c; }
+.rt-p2 { animation-name: rt-p2; }
+.rt-p3 { animation-name: rt-p3; }
+
+@keyframes rt-p1 {
+  0%, 2% { opacity: 0; stroke-dashoffset: 14; }
+  3% { opacity: 1; stroke-dashoffset: 14; }
+  15% { opacity: 1; stroke-dashoffset: -100; }
+  16%, 100% { opacity: 0; stroke-dashoffset: -100; }
 }
 
-@keyframes rt-dot-2 {
-  0%, 44% { opacity: 0; transform: translate(0, 0); }
-  45% { opacity: 1; transform: translate(0, 0); }
-  50% { opacity: 1; transform: translate(0, -44px); }
-  53%, 100% { opacity: 0; transform: translate(0, -44px); }
+@keyframes rt-p1b {
+  0%, 20% { opacity: 0; stroke-dashoffset: 14; }
+  21% { opacity: 1; stroke-dashoffset: 14; }
+  27% { opacity: 1; stroke-dashoffset: -100; }
+  28%, 100% { opacity: 0; stroke-dashoffset: -100; }
 }
 
-@keyframes rt-dot-3 {
-  0%, 60% { opacity: 0; transform: translate(0, 0); }
-  61% { opacity: 1; transform: translate(0, 0); }
-  66% { transform: translate(78px, 0); }
-  67% { transform: translate(78px, 5px); }
-  75% { transform: translate(234px, 5px); }
-  94% { opacity: 1; transform: translate(234px, 5px); }
-  96%, 100% { opacity: 0; transform: translate(234px, 5px); }
+@keyframes rt-p1c {
+  0%, 29% { opacity: 0; stroke-dashoffset: 14; }
+  30% { opacity: 1; stroke-dashoffset: 14; }
+  40% { opacity: 1; stroke-dashoffset: -100; }
+  41%, 100% { opacity: 0; stroke-dashoffset: -100; }
+}
+
+@keyframes rt-p2 {
+  0%, 44% { opacity: 0; stroke-dashoffset: 14; }
+  45% { opacity: 1; stroke-dashoffset: 14; }
+  50% { opacity: 1; stroke-dashoffset: -86; }
+  51%, 100% { opacity: 0; stroke-dashoffset: -86; }
+}
+
+@keyframes rt-p3 {
+  0%, 60% { opacity: 0; stroke-dashoffset: 14; }
+  61% { opacity: 1; stroke-dashoffset: 14; }
+  71% { opacity: 1; stroke-dashoffset: -100; }
+  72%, 100% { opacity: 0; stroke-dashoffset: -100; }
+}
+
+/* The database lights up softly when the request arrives. */
+.rt-db {
+  animation: rt-db var(--rt) linear infinite;
+}
+
+@keyframes rt-db {
+  0%, 26% { stroke: #333; }
+  27%, 31% { stroke: #9a9a9a; }
+  33%, 100% { stroke: #333; }
 }
 
 .rt-tag {
@@ -998,9 +1016,9 @@ h1 {
 .rt-tag-3 { animation: rt-tag-3 var(--rt) ease-out infinite; }
 
 @keyframes rt-tag-1 {
-  0%, 18% { opacity: 0; }
-  20%, 40% { opacity: 1; }
-  43%, 100% { opacity: 0; }
+  0%, 15% { opacity: 0; }
+  17%, 39% { opacity: 1; }
+  42%, 100% { opacity: 0; }
 }
 
 @keyframes rt-tag-2 {
@@ -1010,8 +1028,8 @@ h1 {
 }
 
 @keyframes rt-tag-3 {
-  0%, 75% { opacity: 0; }
-  77%, 94% { opacity: 1; }
+  0%, 71% { opacity: 0; }
+  73%, 94% { opacity: 1; }
   96%, 100% { opacity: 0; }
 }
 
@@ -1065,8 +1083,7 @@ h1 {
   .pz-ask,
   .pz-done,
   .pz-cursor-b,
-  .rt-tag-3,
-  .rt-dot-3 {
+  .rt-tag-3 {
     opacity: 1;
   }
   .pz-cursor-a {
@@ -1074,9 +1091,6 @@ h1 {
   }
   .pz-page {
     fill: var(--fg);
-  }
-  .rt-dot-3 {
-    transform: translate(234px, 5px);
   }
 }
 
@@ -1249,6 +1263,157 @@ h1 {
   color: var(--dim);
 }
 
+/* Links with the GitHub mark */
+
+.gh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.top nav a[aria-current="page"] {
+  color: var(--fg);
+}
+
+/* Shell commands, colored like jevia.dev: programs bright, flags dim. */
+
+.sh {
+  font-family: var(--mono);
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sh-prompt {
+  color: var(--faint);
+}
+
+.sh-cmd {
+  color: var(--fg);
+}
+
+.sh-plain {
+  color: #a1a1aa;
+}
+
+.sh-opt,
+.sh-op {
+  color: #8a8a8a;
+}
+
+/* Standalone code blocks and commands (setup page) */
+
+.block {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--recess);
+  overflow: hidden;
+}
+
+.block > :last-child,
+.tab-panel > :last-child {
+  border-bottom: 0;
+}
+
+.block.code-install {
+  border-bottom: 1px solid var(--line);
+}
+
+.guide section > .block,
+.guide section > .tabs,
+.guide section > .kv {
+  max-width: 760px;
+}
+
+.guide-gap {
+  margin-top: 22px;
+  margin-bottom: 10px;
+}
+
+.guide-intro {
+  display: grid;
+  gap: 16px;
+  padding-top: 64px;
+}
+
+.guide h1 {
+  font-size: clamp(28px, 3.4vw, 36px);
+}
+
+.notes {
+  margin: 0;
+  padding: 16px 16px 18px 34px;
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted);
+  border-top: var(--rule-soft);
+}
+
+.notes li::marker {
+  color: var(--dim);
+}
+
+.notes code,
+.kv code,
+.callout code {
+  font-size: 12.5px;
+  color: var(--fg);
+}
+
+/* Key / value rows: the agent's tools, config fields, approvals, fixes */
+
+.kv {
+  margin: 8px 0 0;
+  border-top: var(--rule);
+}
+
+.kv > div {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 20px;
+  padding: 12px 0;
+  border-bottom: var(--rule-soft);
+}
+
+.kv-wide > div {
+  grid-template-columns: 230px minmax(0, 1fr);
+}
+
+.kv dt {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--fg);
+}
+
+.kv dd {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.kv-wide {
+  margin-top: 22px;
+}
+
+.callout {
+  max-width: 760px;
+  margin-top: 18px;
+  padding: 12px 14px;
+  border: var(--rule);
+  border-radius: 5px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.callout-warn {
+  border-color: #5a5a5a;
+  color: var(--text);
+}
+
 /* Narrow screens */
 
 /* Once the frame touches the screen edges, the crosshairs would hang off it. */
@@ -1270,6 +1435,11 @@ h1 {
   .hero {
     grid-template-columns: minmax(0, 1fr);
     gap: 36px;
+  }
+  .kv > div,
+  .kv-wide > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
   }
   .pz .pz-wide {
     display: none;

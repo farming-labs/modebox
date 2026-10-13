@@ -1,8 +1,8 @@
 // "What runs where": the agent's code sits in a sealed box with one door.
-// Three requests leave the script in turn (rt-* keyframes in globals.css, 9 s):
-//   0–36%  db.users()        → through the door → allowed → database → answer back
-//   38–56% fetch("evil.com") → hits the wall → blocked
-//   58–94% payments.refund() → through the door → stops: asks you
+// Each request is a pulse running along a wire (rt-* keyframes in globals.css, 10 s):
+//   0–41%  db.users()        → door → allowed → database, and the answer runs back
+//   44–58% fetch("evil.com") → hits the wall → blocked
+//   60–94% payments.refund() → door → stops at the check: asks you
 
 const LINES = [
   { code: "await db.users()", cls: "rt-line-1" },
@@ -66,6 +66,9 @@ export function FigRuntime() {
           WebAssembly
         </text>
 
+        {/* The wire from the script to the door */}
+        <path className="rt-wire" d="M352 181 H430 V206 H520" />
+
         {/* The agent's script */}
         <rect className="pz-card" x="62.5" y="120.5" width="290" height="102" />
         <text className="f-sans f-muted" x="76" y="142">
@@ -98,6 +101,14 @@ export function FigRuntime() {
           />
         ))}
 
+        {/* Pulses: one per request, plus the answer coming back. They're drawn
+            before the check, so a pulse passing through it disappears inside. */}
+        <path className="rt-pulse rt-p1" pathLength="100" d="M352 161 H430 V206 H586" />
+        <path className="rt-pulse rt-p1b" pathLength="100" d="M737 206 H766 V125 H800" />
+        <path className="rt-pulse rt-pulse-back rt-p1c" pathLength="100" d="M800 125 H766 V206 H430 V161 H352" />
+        <path className="rt-pulse rt-p2" pathLength="100" d="M330 120 V76" />
+        <path className="rt-pulse rt-p3" pathLength="100" d="M352 201 H430 V206 H586" />
+
         {/* The door and the check */}
         <text className="f-mono f-hi" x="530" y="172">
           the only door
@@ -117,7 +128,7 @@ export function FigRuntime() {
         </text>
         {TOOLS.map((t) => (
           <g key={t.name}>
-            <rect className="f-box rt-tool" x="800.5" y={t.y + 0.5} width="140" height="40" />
+            <rect className={t.name === "database" ? "f-box rt-tool rt-db" : "f-box rt-tool"} x="800.5" y={t.y + 0.5} width="140" height="40" />
             <text className="f-sans f-text" x="816" y={t.y + 25}>
               {t.name}
             </text>
@@ -127,28 +138,24 @@ export function FigRuntime() {
         <path className="rt-wire" d="M737 206 H796" markerEnd="url(#rt-head)" />
         <path className="rt-wire" d="M737 206 H766 V285 H796" markerEnd="url(#rt-head)" />
 
-        {/* Request 1: allowed, answered */}
-        <circle className="rt-dot rt-dot-1" cx="352" cy="161" r="5" />
-        <circle className="rt-dot rt-dot-1b" cx="800" cy="125" r="4" />
+        {/* Request 3's badge sits under the check */}
+        <g className="rt-tag rt-tag-3">
+          <rect className="pz-badge" x="596" y="244" width="130" height="24" rx="3" />
+          <text className="pz-badge-text" x="661" y="260.5" textAnchor="middle">
+            ❚❚ asks you first
+          </text>
+        </g>
+
+        {/* Request 1: allowed */}
         <text className="f-mono f-hi rt-tag rt-tag-1" x="742" y="170">
           allowed
         </text>
 
         {/* Request 2: blocked at the wall */}
-        <circle className="rt-dot rt-dot-2" cx="330" cy="120" r="5" />
         <g className="rt-tag rt-tag-2">
           <path className="rt-x" d="M324 68 l12 12 M336 68 l-12 12" />
           <text className="f-mono f-hi" x="344" y="71">
             blocked
-          </text>
-        </g>
-
-        {/* Request 3: waits for you */}
-        <circle className="rt-dot rt-dot-3" cx="352" cy="201" r="5" />
-        <g className="rt-tag rt-tag-3">
-          <rect className="pz-badge" x="596" y="244" width="130" height="24" rx="3" />
-          <text className="pz-badge-text" x="661" y="260.5" textAnchor="middle">
-            ❚❚ asks you first
           </text>
         </g>
       </svg>

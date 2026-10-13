@@ -3,23 +3,27 @@
 import json from "@shikijs/langs/json";
 import python from "@shikijs/langs/python";
 import rust from "@shikijs/langs/rust";
+import shellscript from "@shikijs/langs/shellscript";
+import toml from "@shikijs/langs/toml";
 import typescript from "@shikijs/langs/typescript";
 import vesper from "@shikijs/themes/vesper";
 import { createHighlighterCoreSync } from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 
-export type Lang = "json" | "ts" | "py" | "rs";
+export type Lang = "json" | "ts" | "py" | "rs" | "sh" | "toml";
 
 const NAMES: Record<Lang, string> = {
   json: "json",
   ts: "typescript",
   py: "python",
   rs: "rust",
+  sh: "shellscript",
+  toml: "toml",
 };
 
 const highlighter = createHighlighterCoreSync({
   themes: [vesper],
-  langs: [json, python, rust, typescript],
+  langs: [json, python, rust, shellscript, toml, typescript],
   engine: createJavaScriptRegexEngine(),
 });
 

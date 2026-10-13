@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CopyButton } from "./copy-button";
+import { ShellCode } from "./shell-code";
 
 export interface CodeTab {
   id: string;
@@ -39,9 +40,7 @@ export function CodeTabs({ tabs }: { tabs: CodeTab[] }) {
 
       <div className="tab-panel" role="tabpanel" id="code-panel" aria-labelledby={`code-${tab.id}-tab`}>
         <div className="code-install">
-          <code>
-            <span className="prompt">$</span> {tab.install}
-          </code>
+          <ShellCode cmd={tab.install} />
           <CopyButton text={tab.install} />
         </div>
         <div className="code-head">
@@ -51,9 +50,7 @@ export function CodeTabs({ tabs }: { tabs: CodeTab[] }) {
         <div className="code-body" dangerouslySetInnerHTML={{ __html: tab.html }} />
         {tab.then ? (
           <div className="code-install code-then">
-            <code>
-              <span className="prompt">$</span> {tab.then}
-            </code>
+            <ShellCode cmd={tab.then} />
             <CopyButton text={tab.then} />
           </div>
         ) : null}
