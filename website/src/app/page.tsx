@@ -1,47 +1,23 @@
 import { CodeTabs, type CodeTab } from "../components/code-tabs";
-import { Command } from "../components/command";
 import { FigPause } from "../components/fig-pause";
 import { FigRuntime } from "../components/fig-runtime";
+import { InstallSwitch } from "../components/install-switch";
 import { MemoryField } from "../components/memory-field";
+import { highlight, type Lang } from "../lib/highlight";
 
 const REPO = "https://github.com/farming-labs/modebox";
 const GUIDE = `${REPO}/blob/main/docs/integrations.md`;
 
 // The features, laid out like a memory map: address, segment, what it does, what it costs.
 const MAP = [
-  {
-    addr: "0x0000",
-    segment: "engine",
-    what: "QuickJS-ng compiled to WebAssembly and run by wasmtime, inside your process. Booted once; every run gets a copy-on-write copy.",
-    cost: "~0.1 ms",
-  },
-  {
-    addr: "0x4000",
-    segment: "boundary",
-    what: "The script can only call the tools you hand it. MCP servers show up as typed functions. No files, network or environment.",
-    cost: "2 imports",
-  },
-  {
-    addr: "0x8000",
-    segment: "pause",
-    what: "A call that needs approval seals the run into an encrypted token. Resume it later, on any machine. Nothing runs twice.",
-    cost: "~17 KB",
-  },
-  {
-    addr: "0xC000",
-    segment: "files",
-    what: "One API over local folders, S3, R2, MinIO, GCS and Azure. Writes are staged and land after you approve.",
-    cost: "staged",
-  },
-  {
-    addr: "0x10000",
-    segment: "shell",
-    what: "sh() runs real commands under Seatbelt on macOS, or bubblewrap and seccomp on Linux, reaching only the hosts you list.",
-    cost: "per host",
-  },
+  { addr: "0x0000", segment: "engine", what: "QuickJS-ng in WebAssembly. Booted once, copied per run.", cost: "~0.1 ms" },
+  { addr: "0x4000", segment: "boundary", what: "Only the tools you hand it. MCP servers become typed functions.", cost: "2 imports" },
+  { addr: "0x8000", segment: "pause", what: "Seals the run into a token. Resume anywhere; nothing re-runs.", cost: "~17 KB" },
+  { addr: "0xC000", segment: "files", what: "One API over local, S3, R2, GCS and Azure. Writes wait for you.", cost: "staged" },
+  { addr: "0x10000", segment: "shell", what: "sh() under Seatbelt or bubblewrap + seccomp, listed hosts only.", cost: "per host" },
 ];
 
-const TABS: CodeTab[] = [
+const SOURCES: (Omit<CodeTab, "html"> & { lang: Lang })[] = [
   {
     id: "mcp",
     label: "MCP",
@@ -127,6 +103,8 @@ if let Outcome::Suspended(s) = r.outcome {
   },
 ];
 
+const TABS: CodeTab[] = SOURCES.map(({ lang, ...tab }) => ({ ...tab, html: highlight(tab.code, lang) }));
+
 const CLIENTS = ["Claude Code", "opencode", "Codex", "Cursor", "Node", "Python", "Rust"];
 
 function Logo() {
@@ -162,57 +140,41 @@ export default function HomePage() {
       </header>
 
       <main>
-        <section className="intro corners">
-          <p className="eyebrow">v0.1 · MIT · code mode for AI agents</p>
-          <h1>Code mode with a pause button.</h1>
-          <p className="lede">
-            Your agent writes one script that calls your tools. modebox runs it in a WebAssembly
-            sandbox inside your process, about 0.1 ms per run, and can freeze it mid-run until you
-            approve.
-          </p>
-          <div className="install">
-            <Command>cargo install modebox</Command>
-            <p>
-              Or <code>npm install modebox</code> · <code>pip install modebox</code>
+        <section className="hero corners">
+          <div className="hero-copy">
+            <p className="eyebrow">v0.1 · MIT · open source</p>
+            <h1>Code mode, sandboxed.</h1>
+            <p className="lede">
+              Your agent writes one script that calls your tools. modebox runs it in about 0.1 ms,
+              and pauses it mid-run when a call needs you.
+            </p>
+            <InstallSwitch />
+            <p className="hero-links">
+              <a href={GUIDE}>Setup guide →</a>
+              <a href={REPO}>GitHub →</a>
             </p>
           </div>
-        </section>
-
-        <section className="live corners" aria-labelledby="live-title">
-          <Label n="01">live</Label>
-          <p className="section-copy" id="live-title">
-            This is the sandbox's memory, one square per 4 KiB page. Press pause, or wait for the
-            refund to ask for approval.
-          </p>
           <MemoryField />
         </section>
 
         <section className="explain corners" aria-labelledby="pause-title">
-          <Label n="02">pause</Label>
+          <Label n="01">pause</Label>
           <h2 id="pause-title">How a pause works</h2>
-          <p className="section-copy">
-            When a call needs your approval, modebox doesn't keep the process waiting, and doesn't
-            replay the script later. It saves the run itself: only the memory pages that changed,
-            compressed and sealed into a token. Approve it whenever and wherever you like, and the
-            script carries on from that exact line.
-          </p>
+          <p className="section-copy">The run itself is saved. Nothing waits in memory, nothing re-runs.</p>
           <FigPause />
         </section>
 
         <section className="explain corners" aria-labelledby="runtime-title">
-          <Label n="03">inside</Label>
+          <Label n="02">inside</Label>
           <h2 id="runtime-title">What runs where</h2>
           <p className="section-copy">
-            Your script never becomes native code. QuickJS-ng, a small JavaScript engine, is
-            compiled to WebAssembly once, booted once with Wizer, and turned into machine code by
-            Cranelift. Every run gets a copy-on-write copy of that booted engine. The sandbox has
-            exactly two ways out: <code>emit()</code> to call your tools, and a clock.
+            QuickJS-ng in WebAssembly, with two ways out: <code>emit()</code> and a clock.
           </p>
           <FigRuntime />
         </section>
 
         <section className="map corners" aria-labelledby="map-title">
-          <Label n="04">at a glance</Label>
+          <Label n="03">at a glance</Label>
           <h2 id="map-title">Memory map</h2>
           <div className="map-table" role="table" aria-label="What modebox is made of">
             <div className="map-row map-head" role="row">
@@ -241,12 +203,9 @@ export default function HomePage() {
         </section>
 
         <section className="use corners" aria-labelledby="use-title">
-          <Label n="05">use it</Label>
+          <Label n="04">use it</Label>
           <h2 id="use-title">Pick how you run it</h2>
-          <p className="section-copy">
-            Plug it into your agent over MCP, or call it from your own code. Each example pauses on a
-            refund and resumes after approval.
-          </p>
+          <p className="section-copy">Over MCP, or from your own code.</p>
           <CodeTabs tabs={TABS} />
           <p className="more">
             opencode, Codex, Cursor and other agents: <a href={GUIDE}>the setup guide</a>.

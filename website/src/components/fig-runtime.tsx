@@ -96,8 +96,8 @@ export function FigRuntime() {
         </text>
 
         {/* The only two ways out */}
-        <path className="f-arrow f-arrow-hi" d="M362 248 H308" markerEnd="url(#f-rt-head)" />
-        <path className="f-arrow" d="M308 274 H362" markerEnd="url(#f-rt-head)" />
+        <path className="f-arrow f-arrow-hi f-flow" d="M362 248 H308" markerEnd="url(#f-rt-head)" />
+        <path className="f-arrow f-flow" d="M308 274 H362" markerEnd="url(#f-rt-head)" />
         <text className="f-mono f-hi" x={306} y={242}>
           emit()
         </text>

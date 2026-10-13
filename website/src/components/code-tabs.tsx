@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { CopyButton } from "./copy-button";
 
 export interface CodeTab {
@@ -8,43 +8,10 @@ export interface CodeTab {
   label: string;
   install: string;
   file: string;
-  lang: "json" | "ts" | "py" | "rs";
   code: string;
+  /** The code, already highlighted on the server. */
+  html: string;
   then?: string;
-}
-
-const KEYWORDS: Record<CodeTab["lang"], string[]> = {
-  json: [],
-  ts: ["import", "from", "const", "await", "if", "return", "new"],
-  py: ["import", "await", "if", "def", "async", "return"],
-  rs: ["use", "let", "mut", "if", "await", "fn"],
-};
-
-// A deliberately small highlighter: comments, strings and keywords, in greys.
-function highlight(code: string, lang: CodeTab["lang"]): ReactNode[] {
-  const comment = lang === "py" ? "#.*" : "//.*";
-  const kw = KEYWORDS[lang];
-  const parts = [comment, `"(?:[^"\\\\]|\\\\.)*"`, kw.length ? `\\b(?:${kw.join("|")})\\b` : null]
-    .filter(Boolean)
-    .join("|");
-  const re = new RegExp(parts, "g");
-  const out: ReactNode[] = [];
-  let last = 0;
-  let k = 0;
-  for (const m of code.matchAll(re)) {
-    const i = m.index ?? 0;
-    if (i > last) out.push(code.slice(last, i));
-    const t = m[0];
-    const cls = t.startsWith("#") || t.startsWith("//") ? "tok-com" : t.startsWith('"') ? "tok-str" : "tok-kw";
-    out.push(
-      <span key={k++} className={cls}>
-        {t}
-      </span>,
-    );
-    last = i + t.length;
-  }
-  if (last < code.length) out.push(code.slice(last));
-  return out;
 }
 
 export function CodeTabs({ tabs }: { tabs: CodeTab[] }) {
@@ -81,9 +48,7 @@ export function CodeTabs({ tabs }: { tabs: CodeTab[] }) {
           <span>{tab.file}</span>
           <CopyButton text={tab.code} />
         </div>
-        <pre className="code-body">
-          <code>{highlight(tab.code, tab.lang)}</code>
-        </pre>
+        <div className="code-body" dangerouslySetInnerHTML={{ __html: tab.html }} />
         {tab.then ? (
           <div className="code-install code-then">
             <code>

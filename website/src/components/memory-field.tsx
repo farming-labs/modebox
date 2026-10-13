@@ -181,45 +181,50 @@ export function MemoryField() {
   }, []);
 
   const frozen = phase === "awaiting" || phase === "paused";
+  const state =
+    phase === "running" ? "running" : phase === "awaiting" ? "needs approval" : phase === "paused" ? "paused" : "returned";
   const status =
-    phase === "running"
-      ? `running · line ${line + 1}`
-      : phase === "awaiting"
-        ? `paused at line ${APPROVAL_LINE + 1} · payments.refund needs your approval`
-        : phase === "paused"
-          ? `paused by you at line ${line + 1}`
-          : "returned · nothing ran twice";
+    phase === "awaiting"
+      ? "payments.refund needs your approval"
+      : phase === "paused"
+        ? `paused at line ${line + 1}`
+        : phase === "done"
+          ? "returned · nothing ran twice"
+          : "booted from snapshot · ~0.1 ms";
 
   return (
-    <div className={`field${frozen ? " is-frozen" : ""}`}>
-      <div className="field-script" aria-hidden="true">
-        <span className="field-ln">{String(line + 1).padStart(2, "0")}</span>
-        <code>{SCRIPT[line]}</code>
-      </div>
-      <canvas
-        ref={canvasRef}
-        className="field-canvas"
-        role="img"
-        aria-label="The sandbox's memory, one square per 4 KiB page. Pages flicker as the script writes to them; when the run pauses, the changed pages turn white."
-      />
-      <div className="field-bar">
-        <p className="field-status" aria-live="polite">
-          {status}
-        </p>
+    <div className={`sbx${frozen ? " is-frozen" : ""}`}>
+      <div className="sbx-bar">
+        <span className="sbx-id">sandbox · mb_7f3a2c</span>
+        <span className="sbx-state">{state}</span>
         <button
           type="button"
-          className="field-button"
+          className="sbx-button"
           onClick={onButton}
           disabled={phase === "done"}
         >
           {phase === "running" ? "❚❚  Pause" : phase === "awaiting" ? "Approve  ▶" : phase === "paused" ? "Resume  ▶" : "Done"}
         </button>
       </div>
-      <div className="field-token" aria-hidden={!frozen}>
-        <span>
-          sealed · {stats.changed.toLocaleString("en-US")} of {stats.total.toLocaleString("en-US")} pages changed
-        </span>
-        <code>{token}</code>
+      <div className="sbx-line" aria-hidden="true">
+        <span className="sbx-ln">{String(line + 1).padStart(2, "0")}</span>
+        <code>{SCRIPT[line]}</code>
+      </div>
+      <canvas
+        ref={canvasRef}
+        className="sbx-canvas"
+        role="img"
+        aria-label="The sandbox's memory, one square per 4 KiB page. Pages flicker as the script writes to them; when the run pauses, the changed pages turn white."
+      />
+      <div className="sbx-foot">
+        <span aria-live="polite">{status}</span>
+        {frozen ? (
+          <span className="sbx-token">
+            {stats.changed.toLocaleString("en-US")} pages → <code>{token}</code>
+          </span>
+        ) : (
+          <span>4 KiB pages</span>
+        )}
       </div>
     </div>
   );
