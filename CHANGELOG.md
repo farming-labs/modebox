@@ -4,9 +4,19 @@ Notable changes to modebox. The format follows [Keep a Changelog](https://keepac
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-12
+
 ### Added
 
-- **Python** (`crates/modebox-python`): `run`, `run_sync`, `Runner`, `get_host_function_context` and `require_approval`, the same API as the Node package, for Python 3.10 and later. Host functions can be plain functions or `async def`; they run on the caller's event loop. Install with `pip install modebox`: releases publish a wheel per platform and an sdist to PyPI, through trusted publishing like crates.io and npm.
+- **Python** (`crates/modebox-python`): `run`, `run_sync`, `Runner`, `get_host_function_context` and `require_approval`, the same API as the Node package, for Python 3.10 and later. Host functions can be plain functions or `async def`; they run on the caller's event loop. Install with `pip install modebox`. There are wheels for macOS (arm64, x64) and Linux (x64, arm64, glibc 2.34 or later), and an sdist that builds with Rust 1.96 or later.
+
+### Changed
+
+- Releases are published from GitHub Actions with trusted publishing, so no registry token is stored anywhere. npm packages carry provenance, and PyPI files carry attestations.
+
+### Notes
+
+- The guest is unchanged, so continuation tokens and saved sessions from 0.1.0 resume in 0.1.1.
 
 ## [0.1.0] - 2026-10-11
 
