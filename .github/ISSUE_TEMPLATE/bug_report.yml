@@ -1,0 +1,50 @@
+name: Bug report
+description: Something in modebox doesn't work as documented.
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: modebox version
+      description: From `modebox --version`, `npm ls modebox` or `pip show modebox`.
+      placeholder: "0.1.1"
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and CPU
+      placeholder: "macOS 26 arm64, or Ubuntu 24.04 x64"
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: How you run modebox
+      options:
+        - CLI
+        - MCP server in opencode
+        - MCP server in Claude Code
+        - MCP server in Codex
+        - MCP server in Cursor
+        - MCP server in another client
+        - Node API
+        - Python API
+        - Rust API
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Script and config
+      description: The smallest script and `modebox.json` that show the problem. Leave out tokens and other secrets.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, what happened instead, and the full error. For a harness problem, include the output of `modebox -c modebox.json types`.
+    validations:
+      required: true

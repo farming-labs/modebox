@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security problem privately
+    url: https://github.com/farming-labs/modebox/blob/main/SECURITY.md
+    about: Don't open a public issue for a vulnerability. SECURITY.md says how to report it.
+  - name: Setup guide for agent harnesses
+    url: https://github.com/farming-labs/modebox/blob/main/docs/integrations.md
+    about: Installing the CLI, writing modebox.json, and connecting opencode, Claude Code, Codex or Cursor.

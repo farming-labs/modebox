@@ -267,12 +267,12 @@ Security-relevant gaps are listed under "Known limitations" in [SECURITY.md](SEC
 - **CPU-heavy JS:** QuickJS is an interpreter, so heavy computation is much slower than on V8. Next: an opt-in V8-isolate tier in a separate sandboxed process.
 - **Web APIs:** `URL` and `URLSearchParams` follow the WHATWG standard; the `url` crate parses them. There's no `Intl`. Dates are always UTC, with no local time zone. `toLocaleString()` and the other locale methods ignore the locale and format like en-US, numbers aren't grouped, and `localeCompare` compares UTF-16 code units.
 - **Platforms:** macOS (arm64, x64) and Linux (x64, arm64, glibc). The shell sandbox is Seatbelt on macOS and bubblewrap plus a seccomp filter on Linux, and CI runs both on every change. Windows and musl Linux aren't supported; for musl, build `crates/modebox-node` yourself and point `MODEBOX_NATIVE` at it.
-- **Python:** a Monty or CPython-wasi guest would reuse the same snapshot and resume machinery.
+- **Python inside the sandbox:** sandboxed code is JavaScript or TypeScript, including when you call modebox from Python. A Monty or CPython-wasi guest would let it run Python too, reusing the same snapshot and resume machinery.
 - **Shared policy file:** one policy format that imports/exports opencode, Codex and Claude Code permission configs.
 
 ## Development
 
-Releases are cut by pushing a `vX.Y.Z` tag; see [docs/releasing.md](docs/releasing.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+Releases are cut by pushing a `vX.Y.Z` tag; see [docs/releasing.md](docs/releasing.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md). To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```
 guest/                 QuickJS guest (wasm32-unknown-unknown): event loop, codec, prelude
