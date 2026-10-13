@@ -3,3 +3,6 @@ guest/target/
 node_modules/
 packages/*/*.node
 *.tmp
+crates/modebox-python/python/modebox/*.so
+__pycache__/
+.venv/

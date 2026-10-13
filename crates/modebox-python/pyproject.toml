@@ -1,0 +1,32 @@
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[project]
+name = "modebox"
+description = "Run untrusted, agent-written JavaScript and TypeScript in a WebAssembly sandbox whose only authority is the functions you give it"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+keywords = ["sandbox", "wasm", "javascript", "ai-agents", "mcp"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Rust",
+  "Topic :: Security",
+  "Typing :: Typed",
+]
+# The version comes from Cargo.toml.
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/farming-labs/modebox"
+Repository = "https://github.com/farming-labs/modebox"
+Changelog = "https://github.com/farming-labs/modebox/blob/main/CHANGELOG.md"
+
+[tool.maturin]
+module-name = "modebox._native"
+python-source = "python"

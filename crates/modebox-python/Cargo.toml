@@ -1,0 +1,30 @@
+[package]
+name = "modebox-python"
+description = "Python bindings for modebox"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+# An extension module leaves Python's symbols for the interpreter to provide,
+# so a Rust test binary can't link; the tests are in tests/ and run in Python.
+test = false
+doctest = false
+
+[features]
+default = ["extension-module"]
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+modebox-core.workspace = true
+serde_json.workspace = true
+pyo3 = { version = "0.29", features = ["abi3-py310"] }
+pyo3-async-runtimes = { version = "0.29", features = ["tokio-runtime"] }
+
+[build-dependencies]
+pyo3-build-config = "0.29"

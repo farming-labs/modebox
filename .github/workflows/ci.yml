@@ -34,6 +34,10 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      # The oldest Python the package supports; PyO3's build also finds it.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.10"
       - name: Install bubblewrap
         if: runner.os == 'Linux'
         run: |
@@ -54,14 +58,21 @@ jobs:
           # Shell tests fail instead of skipping when the sandbox can't start.
           MODEBOX_REQUIRE_SANDBOX: "1"
         run: cargo test --profile ci --workspace --locked
-      - name: Build the CLI and the Node binding
-        run: cargo build --profile ci -p modebox -p modebox-node --locked
+      - name: Build the CLI and the Node and Python bindings
+        run: cargo build --profile ci -p modebox -p modebox-node -p modebox-python --locked
       - name: Node tests
         run: |
           lib=target/ci/libmodebox_node.so
           [ -f "$lib" ] || lib=target/ci/libmodebox_node.dylib
           cp "$lib" packages/modebox/modebox.node
           cd packages/modebox && npm test
+      - name: Python tests
+        run: |
+          lib=target/ci/lib_native.so
+          [ -f "$lib" ] || lib=target/ci/lib_native.dylib
+          cp "$lib" crates/modebox-python/python/modebox/_native.abi3.so
+          cd crates/modebox-python
+          PYTHONPATH=python python -m unittest discover -s tests -v
       - name: MCP end to end
         env:
           MODEBOX_BIN: target/ci/modebox

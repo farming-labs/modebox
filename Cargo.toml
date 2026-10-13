@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/modebox-core", "crates/modebox-cli", "crates/modebox-node"]
+members = ["crates/modebox-core", "crates/modebox-cli", "crates/modebox-node", "crates/modebox-python"]
 exclude = ["guest"]
 
 [workspace.package]
