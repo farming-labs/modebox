@@ -1,7 +1,7 @@
 name: Release
 
 # Pushing a `vX.Y.Z` tag builds every target and publishes the crates, the npm
-# packages and a GitHub Release. Running it by hand (Actions → Release → Run
+# packages, the Python package and a GitHub Release. Running it by hand (Actions → Release → Run
 # workflow) only builds and smoke-tests, so the matrix can be checked first.
 # See docs/releasing.md.
 
@@ -53,6 +53,10 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      # The oldest Python the package supports, to test the wheel on.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.10"
       - name: Build
         run: cargo build --release --locked -p modebox -p modebox-node
       - name: Smoke test
@@ -71,10 +75,29 @@ jobs:
         with:
           name: cli-${{ matrix.target }}
           path: modebox-${{ matrix.target }}.tar.gz*
+      # One abi3 wheel per target serves every Python from 3.10 up.
+      - name: Build the Python wheel
+        run: |
+          pip install 'maturin>=1.9,<2'
+          maturin build --release --locked -m crates/modebox-python/Cargo.toml --out python-dist
+      - name: Build the Python sdist
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: maturin sdist -m crates/modebox-python/Cargo.toml --out python-dist
+      # Installed into a fresh venv, so the tests import the wheel, not the
+      # source tree.
+      - name: Test the Python wheel
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install python-dist/*.whl
+          "$RUNNER_TEMP/venv/bin/python" -m unittest discover -s crates/modebox-python/tests -v
       - uses: actions/upload-artifact@v7
         with:
           name: npm-${{ matrix.npm }}
           path: target/release/${{ matrix.lib }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: python-${{ matrix.target }}
+          path: python-dist/*
 
   crates:
     name: publish crates
@@ -145,9 +168,32 @@ jobs:
           cp LICENSE README.md packages/modebox/
           publish modebox
 
+  pypi:
+    name: publish to PyPI
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write # PyPI trusted publishing and attestations
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: python-*
+          path: dist
+          merge-multiple: true
+      # No token: the PyPI project trusts this workflow, and the action
+      # exchanges the job's OIDC identity for a short-lived upload token
+      # (docs/releasing.md). Files already on PyPI are skipped, so a re-run
+      # after a partial failure carries on from there.
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+
   github:
     name: GitHub release
-    needs: [crates, npm]
+    needs: [crates, npm, pypi]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     permissions:

@@ -75,13 +75,14 @@ modebox runs on macOS (arm64, x64) and Linux (x64, arm64, glibc). Windows isn't 
 ```bash
 cargo install modebox      # the CLI and MCP server (needs Rust 1.96+)
 npm install modebox        # the Node API; the binding for your platform comes with it
+pip install modebox        # the Python API (Python 3.10+); a prebuilt wheel per platform
 ```
 
 Prebuilt CLI binaries for each platform, with SHA-256 checksums, are attached to every [GitHub release](https://github.com/farming-labs/modebox/releases). To build from source:
 
 ```bash
 cargo build --release -p modebox      # ./target/release/modebox
-pip install ./crates/modebox-python   # the Python API (Python 3.10+); not on PyPI yet
+pip install ./crates/modebox-python   # the Python API (needs Rust 1.96+)
 ./scripts/build-guest.sh              # only if you change guest/: rebuilds the QuickJS wasm (needs wasi-sdk 24)
 ```
 

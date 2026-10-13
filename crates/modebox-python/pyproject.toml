@@ -30,3 +30,7 @@ Changelog = "https://github.com/farming-labs/modebox/blob/main/CHANGELOG.md"
 [tool.maturin]
 module-name = "modebox._native"
 python-source = "python"
+# LICENSE links to the repository's. maturin packs it under crates/ in the
+# sdist, but PyPI wants the License-File at the top, so it's listed again
+# (PyO3/maturin#2531).
+include = [{ path = "LICENSE", format = "sdist" }]
