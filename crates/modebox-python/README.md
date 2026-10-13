@@ -5,8 +5,10 @@ Run untrusted, agent-written JavaScript and TypeScript in a WebAssembly sandbox 
 This is the Python API for [modebox](https://github.com/farming-labs/modebox). It matches the `modebox` npm package. Python 3.10 or later on macOS (arm64, x64) or Linux (x64, arm64, glibc).
 
 ```bash
-pip install ./crates/modebox-python   # from a checkout of the repo; needs Rust 1.96+
+pip install modebox
 ```
+
+Each of those platforms gets a prebuilt wheel. Anywhere else, pip builds from the source distribution, which needs Rust 1.96 or later.
 
 ## Usage
 
