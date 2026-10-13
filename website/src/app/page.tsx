@@ -1,3 +1,4 @@
+import { BehindScenes } from "../components/behind-scenes";
 import { CodeTabs, type CodeTab } from "../components/code-tabs";
 import { FigPause } from "../components/fig-pause";
 import { FigRuntime } from "../components/fig-runtime";
@@ -146,8 +147,16 @@ export default function HomePage() {
           <FigRuntime />
         </section>
 
+        <section className="explain corners" aria-labelledby="bts-title">
+          <Label n="03">behind the scenes</Label>
+          <h2 id="bts-title" className="fig-h2">
+            What gets compiled, and when
+          </h2>
+          <BehindScenes />
+        </section>
+
         <section className="map corners" aria-labelledby="map-title">
-          <Label n="03">at a glance</Label>
+          <Label n="04">at a glance</Label>
           <h2 id="map-title">Memory map</h2>
           <div className="map-table" role="table" aria-label="What modebox is made of">
             <div className="map-row map-head" role="row">
@@ -176,7 +185,7 @@ export default function HomePage() {
         </section>
 
         <section className="use corners" aria-labelledby="use-title">
-          <Label n="04">use it</Label>
+          <Label n="05">use it</Label>
           <h2 id="use-title">Pick how you run it</h2>
           <p className="section-copy">Over MCP, or from your own code.</p>
           <CodeTabs tabs={TABS} />

@@ -971,6 +971,58 @@ h1 {
   52%, 100% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: -30; }
 }
 
+/* Arrowheads follow the direction of travel: the forward head hides and
+   the back head shows while an answer runs back along the wire. */
+.rt-head {
+  fill: none;
+  stroke: #7a7a7a;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: var(--rt) linear infinite;
+}
+
+.rt-head-1f { animation-name: rt-head-1f; }
+.rt-head-1b { animation-name: rt-head-1b; opacity: 0; }
+.rt-head-2f { animation-name: rt-head-2f; }
+.rt-head-2b { animation-name: rt-head-2b; opacity: 0; }
+
+@keyframes rt-head-1f {
+  0% { opacity: 1; stroke: #7a7a7a; }
+  2% { opacity: 1; stroke: var(--fg); }
+  16% { opacity: 1; stroke: var(--fg); }
+  17% { opacity: 1; stroke: #7a7a7a; }
+  30% { opacity: 1; stroke: #7a7a7a; }
+  31% { opacity: 0; }
+  40% { opacity: 0; }
+  41% { opacity: 1; stroke: #7a7a7a; }
+  60% { opacity: 1; stroke: #7a7a7a; }
+  61% { opacity: 1; stroke: var(--fg); }
+  72% { opacity: 1; stroke: var(--fg); }
+  73% { opacity: 1; stroke: #8a8a8a; }
+  94% { opacity: 1; stroke: #8a8a8a; }
+  96%, 100% { opacity: 1; stroke: #7a7a7a; }
+}
+
+@keyframes rt-head-1b {
+  0%, 30% { opacity: 0; }
+  31%, 40% { opacity: 1; stroke: var(--muted); }
+  41%, 100% { opacity: 0; }
+}
+
+@keyframes rt-head-2f {
+  0%, 19% { opacity: 1; stroke: #7a7a7a; }
+  20%, 27% { opacity: 1; stroke: var(--fg); }
+  28%, 33% { opacity: 0; }
+  34%, 100% { opacity: 1; stroke: #7a7a7a; }
+}
+
+@keyframes rt-head-2b {
+  0%, 27% { opacity: 0; }
+  28%, 33% { opacity: 1; stroke: var(--muted); }
+  34%, 100% { opacity: 0; }
+}
+
 /* The database lights up softly when the request arrives. */
 .rt-db {
   animation: rt-db var(--rt) linear infinite;
@@ -1066,6 +1118,115 @@ h1 {
   }
   .pz-page {
     fill: var(--fg);
+  }
+}
+
+/* 03 · Behind the scenes: three lanes of steps; a highlight walks them in order. */
+
+.bts {
+  --bts: 10s;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--recess);
+  overflow: hidden;
+}
+
+.lane {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  border-bottom: var(--rule-soft);
+}
+
+.lane:last-child {
+  border-bottom: 0;
+}
+
+.lane-head {
+  display: grid;
+  gap: 6px;
+  align-content: center;
+  padding: 18px 16px;
+  border-right: var(--rule-soft);
+}
+
+.lane-when {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.lane-where {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--dim);
+}
+
+.lane-steps {
+  list-style: none;
+  margin: 0;
+  padding: 18px 18px 18px 16px;
+  display: flex;
+  gap: 30px;
+}
+
+.step {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid #333;
+  border-radius: 4px;
+  background: #181818;
+  animation: bts-glow var(--bts) linear infinite;
+  animation-delay: calc(var(--n) * 1s);
+}
+
+.step:not(:last-child)::after {
+  content: "→";
+  position: absolute;
+  right: -23px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.step-tool {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.step-what {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.step-out {
+  justify-self: start;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  border: 1px dashed #3a3a3a;
+  border-radius: 3px;
+  padding: 2px 6px;
+}
+
+@keyframes bts-glow {
+  0% { border-color: #9a9a9a; background: #1f1f1f; }
+  8% { border-color: #9a9a9a; background: #1f1f1f; }
+  11%, 100% { border-color: #333; background: #181818; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step {
+    animation: none;
   }
 }
 
@@ -1410,6 +1571,25 @@ h1 {
   .hero {
     grid-template-columns: minmax(0, 1fr);
     gap: 36px;
+  }
+  .lane {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lane-head {
+    border-right: 0;
+    border-bottom: var(--rule-soft);
+  }
+  .lane-steps {
+    flex-direction: column;
+    gap: 26px;
+  }
+  .step:not(:last-child)::after {
+    content: "↓";
+    right: auto;
+    left: 50%;
+    top: auto;
+    bottom: -22px;
+    transform: translateX(-50%);
   }
   .kv > div,
   .kv-wide > div {

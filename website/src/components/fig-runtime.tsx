@@ -68,7 +68,10 @@ export function FigRuntime() {
         </text>
 
         {/* Routes out of the script: through the door to the check, and up into the wall */}
-        <path className="rt-wire rt-w1" d="M352 181 H430 V206 H582" markerEnd="url(#rt-head)" />
+        <path className="rt-wire rt-w1" d="M352 181 H430 V206 H584" />
+        {/* Two heads per animated wire: forward, and back for the answer */}
+        <path className="rt-head rt-head-1f" d="M577 201.5 L584 206 L577 210.5" />
+        <path className="rt-head rt-head-1b" d="M359 176.5 L352 181 L359 185.5" />
         <path className="rt-wire rt-w5" d="M330 120 V78" />
 
         {/* The agent's script */}
@@ -127,7 +130,9 @@ export function FigRuntime() {
             </text>
           </g>
         ))}
-        <path className="rt-wire rt-w2" d="M737 206 H766 V125 H796" markerEnd="url(#rt-head)" />
+        <path className="rt-wire rt-w2" d="M737 206 H766 V125 H798" />
+        <path className="rt-head rt-head-2f" d="M791 120.5 L798 125 L791 129.5" />
+        <path className="rt-head rt-head-2b" d="M744 201.5 L737 206 L744 210.5" />
         <path className="rt-wire" d="M737 206 H796" markerEnd="url(#rt-head)" />
         <path className="rt-wire" d="M737 206 H766 V285 H796" markerEnd="url(#rt-head)" />
 
