@@ -77,7 +77,7 @@ export default function HomePage() {
         <section className="intro corners">
           <p className="eyebrow">v0.1 · MIT · code mode for AI agents</p>
           <h1>
-            Code mode with a <mark>pause button.</mark>
+            Code mode with a pause button.
           </h1>
           <div className="intro-row">
             <p className="lede">

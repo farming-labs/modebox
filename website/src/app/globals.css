@@ -1,13 +1,16 @@
 :root {
-  --bg: #090909;
-  --panel: #0d0d0d;
-  --fg: #fafafa;
-  --text: #d4d4d8;
-  --muted: #a1a1aa;
-  --dim: #63636b;
-  --faint: #34343a;
-  --line: rgba(250, 250, 250, 0.09);
-  --line-2: #252525;
+  --bg: #151515;
+  --recess: #101010;
+  --raised: #1d1d1d;
+  --fg: #ededed;
+  --text: #b7b7b7;
+  --muted: #929292;
+  --dim: #6e6e6e;
+  --faint: #3a3a3a;
+  --line: #2a2a2a;
+  --rule: 1px dashed #353535;
+  --rule-soft: 1px dashed #2d2d2d;
+  --control-shadow: inset 0 1px rgb(255 255 255 / 0.06), 0 1px 2px rgb(0 0 0 / 0.16);
   --sans: "Geist Variable", system-ui, sans-serif;
   --mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
   --pad: 40px;
@@ -64,8 +67,8 @@ p {
   max-width: 1080px;
   min-height: 100vh;
   margin: 0 auto;
-  border-left: 1px solid var(--line);
-  border-right: 1px solid var(--line);
+  border-left: var(--rule-soft);
+  border-right: var(--rule-soft);
   display: flex;
   flex-direction: column;
 }
@@ -77,7 +80,7 @@ main {
 main > section {
   position: relative;
   padding: 56px var(--pad);
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--rule);
 }
 
 .corners::before,
@@ -106,7 +109,7 @@ main > section {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--rule);
 }
 
 .brand {
@@ -165,17 +168,17 @@ h2 {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  padding: 9px 10px 9px 14px;
-  background: var(--panel);
-  border: 1px solid var(--line-2);
-  border-radius: 6px;
+  padding: 7px 7px 7px 14px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 5px;
   min-width: 0;
 }
 
 .cmd code {
   flex: 1;
   min-width: 0;
-  padding-top: 3px;
+  padding-top: 4px;
   font-size: 12.5px;
   line-height: 1.6;
   color: var(--text);
@@ -189,18 +192,24 @@ h2 {
 
 .copy {
   flex: none;
-  font: 500 11px var(--mono);
-  color: var(--muted);
-  background: transparent;
-  border: 1px solid var(--line-2);
-  border-radius: 4px;
-  padding: 4px 8px;
+  height: 26px;
+  padding: 0 9px;
+  font: 450 10.5px/1 var(--mono);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text);
+  background: #222;
+  border: 1px solid #363636;
+  border-radius: 5px;
+  box-shadow: var(--control-shadow);
   cursor: pointer;
+  transition: background-color 140ms, border-color 140ms;
 }
 
 .copy:hover {
   color: var(--fg);
-  border-color: #444;
+  background: #262626;
+  border-color: #4a4a4a;
 }
 
 /* Intro */
@@ -219,11 +228,6 @@ h1 {
   text-wrap: balance;
 }
 
-mark {
-  background: var(--fg);
-  color: var(--bg);
-  padding: 0 0.05em;
-}
 
 .intro-row {
   display: grid;
@@ -269,9 +273,9 @@ mark {
 .field {
   display: block;
   min-width: 0;
-  border: 1px solid var(--line-2);
-  border-radius: 8px;
-  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--recess);
   overflow: hidden;
 }
 
@@ -281,7 +285,7 @@ mark {
   gap: 16px;
   height: 44px;
   padding: 0 16px;
-  border-bottom: 1px solid var(--line-2);
+  border-bottom: var(--rule-soft);
   font-size: 12.5px;
   white-space: pre;
   overflow: hidden;
@@ -299,9 +303,9 @@ mark {
 }
 
 .is-frozen .field-script code {
-  background: var(--fg);
-  color: var(--bg);
-  padding: 1px 4px;
+  color: var(--fg);
+  outline: 1px dashed rgb(255 255 255 / 0.4);
+  outline-offset: 3px;
 }
 
 .field-canvas {
@@ -317,8 +321,8 @@ mark {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 10px 10px 10px 16px;
-  border-top: 1px solid var(--line-2);
+  padding: 9px 9px 9px 16px;
+  border-top: var(--rule-soft);
 }
 
 .field-status {
@@ -334,24 +338,33 @@ mark {
 
 .field-button {
   flex: none;
-  font: 500 12px var(--mono);
-  color: var(--bg);
-  background: var(--fg);
-  border: 1px solid var(--fg);
-  border-radius: 4px;
-  padding: 8px 14px;
-  cursor: pointer;
+  height: 32px;
+  padding: 0 12px;
+  font: 450 11px/1 var(--mono);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
   white-space: pre;
+  color: #000;
+  background: var(--fg);
+  border: 1px solid rgb(255 255 255 / 0.2);
+  border-radius: 5px;
+  box-shadow: var(--control-shadow);
+  cursor: pointer;
+  transition: background-color 140ms, scale 140ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .field-button:hover {
-  background: #e4e4e7;
+  background: #fff;
+}
+
+.field-button:active {
+  scale: 0.97;
 }
 
 .field-button:disabled {
   color: var(--dim);
-  background: transparent;
-  border-color: var(--line-2);
+  background: #222;
+  border-color: #363636;
   cursor: default;
 }
 
@@ -365,7 +378,7 @@ mark {
   font-family: var(--mono);
   font-size: 12px;
   color: var(--muted);
-  border-top: 0 solid var(--line-2);
+  border-top: 0 dashed #2d2d2d;
   transition: height 0.2s ease;
 }
 
@@ -385,7 +398,7 @@ mark {
 /* Memory map */
 
 .map-table {
-  border-top: 1px solid var(--line-2);
+  border-top: var(--rule);
 }
 
 .map-row {
@@ -393,7 +406,7 @@ mark {
   grid-template-columns: 96px 110px minmax(0, 1fr) 96px;
   gap: 24px;
   padding: 18px 0;
-  border-bottom: 1px solid var(--line-2);
+  border-bottom: var(--rule-soft);
   align-items: baseline;
 }
 
@@ -485,7 +498,7 @@ mark {
   list-style: none;
   margin: 28px 0 0;
   padding: 20px 0 0;
-  border-top: 1px solid var(--line-2);
+  border-top: var(--rule);
   display: flex;
   flex-wrap: wrap;
   gap: 10px 26px;

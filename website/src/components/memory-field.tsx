@@ -162,11 +162,11 @@ export function MemoryField() {
         const x = (i % s.cols) * STEP;
         const y = Math.floor(i / s.cols) * STEP;
         if ((s.frozen || s.reduced) && s.dirty[i]) {
-          ctx.fillStyle = "#fafafa";
+          ctx.fillStyle = "#ededed";
         } else {
           const h = s.heat[i];
-          const v = Math.round(27 + h * 90);
-          ctx.fillStyle = `rgb(${v},${v},${v + 2})`;
+          const v = Math.round(31 + h * 95);
+          ctx.fillStyle = `rgb(${v},${v},${v})`;
           if (!s.frozen) s.heat[i] = h * 0.95;
         }
         ctx.fillRect(x, y, CELL, CELL);
