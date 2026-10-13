@@ -4,7 +4,8 @@ import { FigRuntime } from "../components/fig-runtime";
 import { InstallSwitch } from "../components/install-switch";
 import { MemoryField } from "../components/memory-field";
 import { SiteFooter, SiteHeader } from "../components/site-chrome";
-import { highlight, type Lang } from "../lib/highlight";
+import HIGHLIGHTED from "../content/highlighted.json";
+import { SAMPLES, type SampleId } from "../content/samples";
 
 const GUIDE = "/setup";
 
@@ -17,19 +18,13 @@ const MAP = [
   { addr: "0x10000", segment: "shell", what: "sh() under Seatbelt or bubblewrap + seccomp, listed hosts only.", cost: "per host" },
 ];
 
-const SOURCES: (Omit<CodeTab, "html"> & { lang: Lang })[] = [
+const SOURCES: Omit<CodeTab, "html">[] = [
   {
     id: "mcp",
     label: "MCP",
     install: "cargo install modebox",
     file: "modebox.json",
-    lang: "json",
-    code: `{
-  "mcpServers": {
-    "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"] }
-  },
-  "approve": ["github.create_*", "github.merge_*"]
-}`,
+    code: SAMPLES.mcp.code,
     then: "claude mcp add --scope project modebox -- modebox mcp -c modebox.json",
   },
   {
@@ -37,73 +32,25 @@ const SOURCES: (Omit<CodeTab, "html"> & { lang: Lang })[] = [
     label: "Node",
     install: "npm install modebox",
     file: "agent.ts",
-    lang: "ts",
-    code: `import { createRunner, requireApproval } from "modebox";
-
-const runner = createRunner({ continuationSecret: process.env.SECRET });
-const hostFunctions = {
-  payments: { refund: requireApproval(refund) },
-};
-
-// \`script\` is the code your agent wrote.
-const r = await runner.run({ source: script, hostFunctions });
-
-if (r.status === "interrupted") {
-  // Later, even in another process:
-  await runner.run({
-    hostFunctions,
-    continuation: r.continuation,
-    resolutions: [{ interruptionId: r.interruptions[0].id, value: true }],
-  });
-}`,
+    code: SAMPLES.node.code,
   },
   {
     id: "python",
     label: "Python",
     install: "pip install modebox",
     file: "agent.py",
-    lang: "py",
-    code: `import os
-import modebox
-
-runner = modebox.Runner(continuation_secret=os.environ["SECRET"])
-host_functions = {"payments": {"refund": modebox.require_approval(refund)}}
-
-# \`script\` is the code your agent wrote.
-r = await runner.run(script, host_functions=host_functions)
-
-if r.status == "interrupted":
-    # Later, even in another process:
-    await runner.run(
-        host_functions=host_functions,
-        continuation=r.continuation,
-        resolutions=[modebox.approve(r.interruptions[0].id)],
-    )`,
+    code: SAMPLES.python.code,
   },
   {
     id: "rust",
     label: "Rust",
     install: "cargo add modebox-core",
     file: "main.rs",
-    lang: "rs",
-    code: `use modebox_core::*;
-
-let engine = Engine::new()?;
-let mut tools = Toolbox::new();
-tools.add(Tool::new("payments.refund", refund).approval(Approval::Always));
-
-// \`script\` is the code your agent wrote.
-let r = engine.run(script, &tools, RunOptions::default()).await;
-
-if let Outcome::Suspended(s) = r.outcome {
-    // Later, even in another process:
-    let approve = [(s.interrupts[0].id, Resolution::Approve)];
-    engine.resume(&s.continuation, approve, &tools, RunOptions::default()).await;
-}`,
+    code: SAMPLES.rust.code,
   },
 ];
 
-const TABS: CodeTab[] = SOURCES.map(({ lang, ...tab }) => ({ ...tab, html: highlight(tab.code, lang) }));
+const TABS: CodeTab[] = SOURCES.map((tab) => ({ ...tab, html: HIGHLIGHTED[tab.id as SampleId] }));
 
 const CLIENTS = ["Claude Code", "opencode", "Codex", "Cursor", "Node", "Python", "Rust"];
 

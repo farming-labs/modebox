@@ -1,9 +1,11 @@
 import type { Metadata } from "@farm.js/core";
 import { Cmd, CodeBlock, Rich } from "../../components/code-block";
+import { CopyDelegate } from "../../components/copy-delegate";
 import { GitHubIcon } from "../../components/github-icon";
 import { HarnessTabs, type Harness } from "../../components/harness-tabs";
 import { REPO, SiteFooter, SiteHeader } from "../../components/site-chrome";
-import { highlight, type Lang } from "../../lib/highlight";
+import HIGHLIGHTED from "../../content/highlighted.json";
+import { SAMPLES, type SampleId } from "../../content/samples";
 
 // The same content as docs/integrations.md in the repo, laid out for the site.
 
@@ -14,31 +16,13 @@ export const metadata: Metadata = {
 
 const GUIDE_SOURCE = `${REPO}/blob/main/docs/integrations.md`;
 
-function block(file: string, code: string, lang: Lang) {
-  return { file, code, html: highlight(code, lang) };
+function block(file: string, id: SampleId) {
+  return { file, code: SAMPLES[id].code, html: HIGHLIGHTED[id] };
 }
 
-const RELEASE = block(
-  "macOS, Apple Silicon",
-  `curl -LO https://github.com/farming-labs/modebox/releases/latest/download/modebox-aarch64-apple-darwin.tar.gz
-tar xzf modebox-aarch64-apple-darwin.tar.gz
-sudo mv modebox-aarch64-apple-darwin/modebox /usr/local/bin/
-modebox --version`,
-  "sh",
-);
+const RELEASE = block("macOS, Apple Silicon", "release");
 
-const CONFIG = block(
-  "modebox.json",
-  `{
-  "mcpServers": {
-    "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"] }
-  },
-  "approve": ["github.create_*", "github.merge_*"],
-  "shell": { "enabled": true, "network": false, "allow": ["ls", "rg", "git status", "git diff"] },
-  "limits": { "timeoutMs": 60000 }
-}`,
-  "json",
-);
+const CONFIG = block("modebox.json", "config");
 
 const FIELDS = [
   { key: "mcpServers", what: "Servers whose tools become functions, like `github.create_issue()`. Local (stdio) servers only." },
@@ -48,9 +32,8 @@ const FIELDS = [
   { key: "mcp.approveTool", what: "Whether to offer the `approve` tool. See approvals below." },
 ];
 
-function harness(h: Omit<Harness, "html"> & { lang?: Lang }): Harness {
-  const { lang, ...rest } = h;
-  return lang && h.code ? { ...rest, html: highlight(h.code, lang) } : rest;
+function harness(h: Omit<Harness, "html">): Harness {
+  return h.code ? { ...h, html: HIGHLIGHTED[h.id as SampleId] } : h;
 }
 
 const HARNESSES: Harness[] = [
@@ -58,21 +41,7 @@ const HARNESSES: Harness[] = [
     id: "opencode",
     label: "opencode",
     file: "opencode.json",
-    lang: "json",
-    code: `{
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "modebox": {
-      "type": "local",
-      "command": ["modebox", "mcp", "-c", "modebox.json"],
-      "enabled": true,
-      "timeout": 300000
-    }
-  },
-  "permission": {
-    "modebox_approve": "ask"
-  }
-}`,
+    code: SAMPLES.opencode.code,
     notes: [
       "`timeout` raises opencode's 5-second MCP timeout to 5 minutes.",
       '`"modebox_approve": "ask"` makes opencode ask you before every `approve` call. Keep it: opencode allows every tool by default.',
@@ -84,12 +53,7 @@ const HARNESSES: Harness[] = [
     id: "claude",
     label: "Claude Code",
     file: ".mcp.json",
-    lang: "json",
-    code: `{
-  "mcpServers": {
-    "modebox": { "command": "modebox", "args": ["mcp", "-c", "modebox.json"] }
-  }
-}`,
+    code: SAMPLES.claude.code,
     cmd: "claude mcp add --scope project modebox -- modebox mcp -c modebox.json",
     notes: [
       "Put the file at your project root, or let Claude Code write it with the command above.",
@@ -102,11 +66,7 @@ const HARNESSES: Harness[] = [
     id: "codex",
     label: "Codex",
     file: "~/.codex/config.toml",
-    lang: "toml",
-    code: `[mcp_servers.modebox]
-command = "modebox"
-args = ["mcp", "-c", "/absolute/path/to/your/project/modebox.json"]
-tool_timeout_sec = 300`,
+    code: SAMPLES.codex.code,
     notes: [
       "Codex's config is global, so point it at your project's `modebox.json` with an absolute path.",
       "`tool_timeout_sec` gives long scripts up to 5 minutes.",
@@ -116,12 +76,7 @@ tool_timeout_sec = 300`,
     id: "cursor",
     label: "Cursor",
     file: ".cursor/mcp.json",
-    lang: "json",
-    code: `{
-  "mcpServers": {
-    "modebox": { "command": "modebox", "args": ["mcp", "-c", "\${workspaceFolder}/modebox.json"] }
-  }
-}`,
+    code: SAMPLES.cursor.code,
     notes: [
       "Cursor fills in `${workspaceFolder}`, so the path is absolute.",
       "To use modebox in every project, put the same entry in `~/.cursor/mcp.json`.",
@@ -282,6 +237,7 @@ export default function SetupPage() {
       </main>
 
       <SiteFooter />
+      <CopyDelegate />
     </div>
   );
 }

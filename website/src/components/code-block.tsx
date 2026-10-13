@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { CopyButton } from "./copy-button";
 import { ShellCode } from "./shell-code";
 
 /** A file's code, highlighted on the server, with its name and a copy button. */
@@ -8,19 +7,23 @@ export function CodeBlock({ file, code, html }: { file: string; code: string; ht
     <div className="block">
       <div className="code-head">
         <span>{file}</span>
-        <CopyButton text={code} />
+        <button type="button" className="copy" data-copy={code} aria-label={`Copy ${file}`}>
+          Copy
+        </button>
       </div>
       <div className="code-body" dangerouslySetInnerHTML={{ __html: html }} />
     </div>
   );
 }
 
-/** One shell command with a copy button. */
+/** One shell command with a copy button (needs a <CopyDelegate /> on the page). */
 export function Cmd({ cmd }: { cmd: string }) {
   return (
     <div className="block code-install">
       <ShellCode cmd={cmd} />
-      <CopyButton text={cmd} />
+      <button type="button" className="copy" data-copy={cmd} aria-label="Copy command">
+        Copy
+      </button>
     </div>
   );
 }

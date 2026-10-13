@@ -21,3 +21,6 @@ dist/
 # Logs and TypeScript cache
 *.log
 *.tsbuildinfo
+
+# Generated from src/content/samples.ts by scripts/highlight.ts
+src/content/highlighted.json
