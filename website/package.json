@@ -1,0 +1,31 @@
+{
+  "name": "modebox-website",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "highlight": "node scripts/highlight.ts",
+    "dev": "node scripts/highlight.ts && farm dev",
+    "build": "node scripts/highlight.ts && farm build",
+    "type-check": "node scripts/highlight.ts && tsc --noEmit"
+  },
+  "dependencies": {
+    "@farm.js/core": "0.1.8",
+    "@fontsource-variable/geist": "5.3.0",
+    "@fontsource-variable/geist-mono": "5.3.0",
+    "@shikijs/langs": "3.23.0",
+    "@shikijs/themes": "3.23.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "shiki": "^3.23.0"
+  },
+  "devDependencies": {
+    "@farm.js/cli": "0.1.8",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  }
+}

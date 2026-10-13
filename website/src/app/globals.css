@@ -1,0 +1,1491 @@
+:root {
+  --bg: #151515;
+  --recess: #101010;
+  --raised: #1d1d1d;
+  --fg: #ededed;
+  --text: #b7b7b7;
+  --muted: #929292;
+  --dim: #6e6e6e;
+  --faint: #3a3a3a;
+  --line: #2a2a2a;
+  --rule: 1px dashed #353535;
+  --rule-soft: 1px dashed #2d2d2d;
+  --control-shadow: inset 0 1px rgb(255 255 255 / 0.06), 0 1px 2px rgb(0 0 0 / 0.16);
+  --sans: "Geist Variable", system-ui, sans-serif;
+  --mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  --pad: 40px;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+body {
+  overflow-x: clip;
+  font-family: var(--sans);
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--fg);
+  color: var(--bg);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 1px solid var(--fg);
+  outline-offset: 2px;
+}
+
+code {
+  font-family: var(--mono);
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+/* Frame: hairline rails, with a crosshair wherever a section edge meets them. */
+
+.frame {
+  max-width: 1080px;
+  min-height: 100vh;
+  margin: 0 auto;
+  border-left: var(--rule-soft);
+  border-right: var(--rule-soft);
+  display: flex;
+  flex-direction: column;
+}
+
+main {
+  flex: 1;
+}
+
+main > section {
+  position: relative;
+  padding: 56px var(--pad);
+  border-bottom: var(--rule);
+}
+
+.corners::before,
+.corners::after {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  width: 9px;
+  height: 9px;
+  background:
+    linear-gradient(var(--dim), var(--dim)) center / 1px 100% no-repeat,
+    linear-gradient(var(--dim), var(--dim)) center / 100% 1px no-repeat;
+}
+
+.corners::before {
+  left: -5px;
+}
+
+.corners::after {
+  right: -5px;
+}
+
+.top {
+  height: 56px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: var(--rule);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 560;
+  letter-spacing: -0.01em;
+}
+
+.top nav {
+  display: flex;
+  gap: 24px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.top nav a:hover,
+.bottom a:hover,
+.more a:hover {
+  color: var(--fg);
+}
+
+.bottom {
+  padding: 20px 24px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px 24px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.bottom a {
+  color: var(--muted);
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--dim);
+}
+
+h2 {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  margin-bottom: 12px;
+}
+
+.map h2,
+.fig-h2 {
+  margin-bottom: 24px;
+}
+
+/* Copy buttons */
+
+.copy {
+  flex: none;
+  height: 26px;
+  padding: 0 9px;
+  font: 450 10.5px/1 var(--mono);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text);
+  background: #222;
+  border: 1px solid #363636;
+  border-radius: 5px;
+  box-shadow: var(--control-shadow);
+  cursor: pointer;
+  transition: background-color 140ms, border-color 140ms;
+}
+
+.copy:hover {
+  color: var(--fg);
+  background: #262626;
+  border-color: #4a4a4a;
+}
+
+/* Hero: copy on the left, the live sandbox on the right */
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: 48px;
+  align-items: center;
+  padding-top: 64px;
+  padding-bottom: 64px;
+}
+
+.hero-copy {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+h1 {
+  font-size: clamp(30px, 3.6vw, 40px);
+  font-weight: 500;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.lede {
+  font-size: 15.5px;
+  line-height: 1.65;
+  color: var(--muted);
+  max-width: 44ch;
+}
+
+/* Install switcher: npm / pip / cargo */
+
+.switch {
+  max-width: 400px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--raised);
+  margin-top: 6px;
+}
+
+.switch-tabs {
+  display: flex;
+  border-bottom: var(--rule-soft);
+}
+
+.switch-tab {
+  font: 450 11px/1 var(--mono);
+  letter-spacing: 0.02em;
+  color: var(--dim);
+  background: transparent;
+  border: 0;
+  border-right: var(--rule-soft);
+  padding: 9px 14px;
+  cursor: pointer;
+  transition: color 140ms;
+}
+
+.switch-tab:hover {
+  color: var(--text);
+}
+
+.switch-tab[aria-selected="true"] {
+  color: var(--fg);
+  box-shadow: inset 0 -1px var(--fg);
+}
+
+.switch-cmd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 7px 7px 14px;
+}
+
+.switch-cmd .sh {
+  font-size: 13.5px;
+}
+
+.switch-cmd .prompt,
+.code-install .prompt {
+  color: var(--dim);
+}
+
+/* Section labels and copy */
+
+.label {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+
+.label span {
+  color: var(--dim);
+  margin-right: 6px;
+}
+
+.section-copy {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--muted);
+  max-width: 64ch;
+  margin-bottom: 28px;
+}
+
+.section-copy code {
+  font-size: 13px;
+  color: var(--fg);
+}
+
+/* The live sandbox window */
+
+.sbx {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--recess);
+  overflow: hidden;
+}
+
+.sbx-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 46px;
+  padding: 0 7px 0 14px;
+  border-bottom: var(--rule-soft);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.sbx-id {
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sbx-state {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.sbx-state::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dim);
+  animation: blink 1.2s steps(2, jump-none) infinite;
+}
+
+.is-frozen .sbx-state {
+  color: var(--fg);
+}
+
+.is-frozen .sbx-state::before {
+  background: var(--fg);
+  animation: none;
+}
+
+@keyframes blink {
+  50% { opacity: 0.25; }
+}
+
+.sbx-button {
+  flex: none;
+  height: 30px;
+  padding: 0 11px;
+  font: 450 11px/1 var(--mono);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: pre;
+  color: #000;
+  background: var(--fg);
+  border: 1px solid rgb(255 255 255 / 0.2);
+  border-radius: 5px;
+  box-shadow: var(--control-shadow);
+  cursor: pointer;
+  transition: background-color 140ms, scale 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sbx-button:hover {
+  background: #fff;
+}
+
+.sbx-button:active {
+  scale: 0.97;
+}
+
+.sbx-button:disabled {
+  color: var(--dim);
+  background: #222;
+  border-color: #363636;
+  cursor: default;
+}
+
+.sbx-line {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 40px;
+  padding: 0 14px;
+  border-bottom: var(--rule-soft);
+  font-size: 12.5px;
+  white-space: pre;
+  overflow: hidden;
+}
+
+.sbx-ln {
+  font-family: var(--mono);
+  color: var(--faint);
+}
+
+.sbx-line code {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.is-frozen .sbx-line code {
+  color: var(--fg);
+  outline: 1px dashed rgb(255 255 255 / 0.4);
+  outline-offset: 3px;
+}
+
+.sbx-canvas {
+  display: block;
+  width: calc(100% - 28px);
+  max-width: calc(100% - 28px);
+  height: 236px;
+  margin: 14px;
+}
+
+.sbx-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 40px;
+  align-items: center;
+  padding: 0 14px;
+  border-top: var(--rule-soft);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--dim);
+}
+
+.is-frozen .sbx-foot {
+  color: var(--muted);
+}
+
+.sbx-token {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sbx-token code {
+  color: var(--fg);
+}
+
+/* Figures */
+
+.fig {
+  margin: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.fig svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.rt svg {
+  min-width: 760px;
+}
+
+.fig-cap {
+  margin-top: 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted);
+  max-width: 70ch;
+}
+
+.f-box {
+  fill: var(--recess);
+  stroke: #333;
+}
+
+
+.f-outer {
+  fill: none;
+  stroke: #353535;
+  stroke-dasharray: 4 4;
+}
+
+
+.f-rule {
+  stroke: #2d2d2d;
+  stroke-dasharray: 3 3;
+}
+
+.f-dash {
+  fill: none;
+  stroke: rgb(255 255 255 / 0.45);
+  stroke-dasharray: 3 3;
+}
+
+.f-chip {
+  fill: #1d1d1d;
+  stroke: #363636;
+}
+
+.f-cell {
+  fill: #262626;
+}
+
+.f-on {
+  fill: var(--fg);
+}
+
+.f-arrow {
+  fill: none;
+  stroke: #6e6e6e;
+  stroke-dasharray: 3 3;
+}
+
+
+.f-mono {
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.f-sans {
+  font-family: var(--sans);
+  font-size: 12px;
+}
+
+.f-title {
+  font-size: 13.5px;
+  font-weight: 500;
+  fill: var(--fg);
+}
+
+.f-hi {
+  fill: var(--fg);
+}
+
+.f-text {
+  fill: var(--text);
+}
+
+.f-muted {
+  fill: var(--muted);
+}
+
+.f-dim {
+  fill: var(--dim);
+}
+
+.f-faint {
+  fill: #454545;
+}
+
+/* Shared figure pieces */
+
+.pz .f-mono,
+.rt .f-mono {
+  font-size: 12px;
+}
+
+.pz .f-sans,
+.rt .f-sans {
+  font-size: 12.5px;
+}
+
+.pz-n {
+  font: 600 13px var(--mono);
+  fill: var(--fg);
+}
+
+.pz-title {
+  font: 500 13.5px var(--sans);
+  fill: var(--fg);
+}
+
+.pz-card {
+  fill: #1b1b1b;
+  stroke: #363636;
+}
+
+.pz-badge {
+  fill: var(--fg);
+}
+
+.pz-badge-text {
+  font: 500 11.5px var(--mono);
+  fill: #000;
+}
+
+/* 01 · How a pause works — one 10 s timeline:
+   0–28% runs · 30–46% saves · 48–62% locks · 62–96% approved, carries on. */
+
+.pz {
+  --pz: 10s;
+}
+
+.pz .pz-narrow {
+  display: none;
+}
+
+.pz-frame {
+  fill: var(--recess);
+  stroke: #333;
+  animation: var(--pz) linear infinite;
+}
+
+.pz-frame-1 { animation-name: pz-frame-1; }
+.pz-frame-2 { animation-name: pz-frame-2; }
+.pz-frame-3 { animation-name: pz-frame-3; }
+.pz-frame-4 { animation-name: pz-frame-4; }
+
+@keyframes pz-frame-1 { 0%, 28% { stroke: #8a8a8a; } 30%, 100% { stroke: #333; } }
+@keyframes pz-frame-2 { 0%, 30% { stroke: #333; } 31%, 46% { stroke: #8a8a8a; } 48%, 100% { stroke: #333; } }
+@keyframes pz-frame-3 { 0%, 47% { stroke: #333; } 48%, 61% { stroke: #8a8a8a; } 62%, 100% { stroke: #333; } }
+@keyframes pz-frame-4 { 0%, 61% { stroke: #333; } 62%, 96% { stroke: #8a8a8a; } 98%, 100% { stroke: #333; } }
+
+/* Step 1: the cursor walks to the refund and stops. */
+.pz-cursor-a {
+  fill: rgb(255 255 255 / 0.06);
+  animation: pz-move-a var(--pz) step-end infinite;
+}
+
+@keyframes pz-move-a {
+  0% { transform: translateY(0); fill: rgb(255 255 255 / 0.06); }
+  6% { transform: translateY(22px); }
+  12% { transform: translateY(44px); }
+  18% { transform: translateY(66px); fill: rgb(255 255 255 / 0.12); }
+  97% { transform: translateY(66px); fill: rgb(255 255 255 / 0.06); }
+}
+
+.pz-hold {
+  opacity: 0;
+  animation: pz-hold var(--pz) ease-out infinite;
+}
+
+@keyframes pz-hold {
+  0%, 19% { opacity: 0; }
+  21%, 95% { opacity: 1; }
+  98%, 100% { opacity: 0; }
+}
+
+/* Links between steps light up as the story moves along them. */
+.pz-link-path {
+  fill: none;
+  stroke: #3a3a3a;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+}
+
+.pz-link-label {
+  fill: var(--dim);
+  font-size: 11px !important;
+}
+
+.pz-link-1 .pz-link-path { animation: pz-line-1 var(--pz) linear infinite; }
+.pz-link-2 .pz-link-path { animation: pz-line-2 var(--pz) linear infinite; }
+.pz-link-3 .pz-link-path { animation: pz-line-3 var(--pz) linear infinite; }
+.pz-link-1 .pz-link-label { animation: pz-label-1 var(--pz) linear infinite; }
+.pz-link-2 .pz-link-label { animation: pz-label-2 var(--pz) linear infinite; }
+.pz-link-3 .pz-link-label { animation: pz-label-3 var(--pz) linear infinite; }
+
+@keyframes pz-line-1 {
+  0%, 25% { stroke: #3a3a3a; stroke-dashoffset: 0; }
+  27% { stroke: var(--fg); }
+  33% { stroke: var(--fg); stroke-dashoffset: -24; }
+  35%, 100% { stroke: #3a3a3a; }
+}
+@keyframes pz-line-2 {
+  0%, 43% { stroke: #3a3a3a; stroke-dashoffset: 0; }
+  45% { stroke: var(--fg); }
+  51% { stroke: var(--fg); stroke-dashoffset: -24; }
+  53%, 100% { stroke: #3a3a3a; }
+}
+@keyframes pz-line-3 {
+  0%, 59% { stroke: #3a3a3a; stroke-dashoffset: 0; }
+  61% { stroke: var(--fg); }
+  66% { stroke: var(--fg); stroke-dashoffset: -24; }
+  68%, 100% { stroke: #3a3a3a; }
+}
+@keyframes pz-label-1 { 0%, 25% { fill: var(--dim); } 27%, 33% { fill: var(--fg); } 35%, 100% { fill: var(--dim); } }
+@keyframes pz-label-2 { 0%, 43% { fill: var(--dim); } 45%, 51% { fill: var(--fg); } 53%, 100% { fill: var(--dim); } }
+@keyframes pz-label-3 { 0%, 59% { fill: var(--dim); } 61%, 66% { fill: var(--fg); } 68%, 100% { fill: var(--dim); } }
+
+/* Step 2: the changed pages light up, one after another. */
+.pz-page {
+  animation: pz-page var(--pz) ease-out infinite;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+
+@keyframes pz-page {
+  0%, 32% { fill: #262626; }
+  34%, 95% { fill: var(--fg); }
+  98%, 100% { fill: #262626; }
+}
+
+.pz-saved {
+  opacity: 0;
+  animation: pz-saved var(--pz) ease-out infinite;
+}
+
+@keyframes pz-saved {
+  0%, 42% { opacity: 0; }
+  44%, 95% { opacity: 1; }
+  98%, 100% { opacity: 0; }
+}
+
+/* Step 3: the pages bundle up and the lock snaps shut. */
+.pz-bundle,
+.pz-token {
+  opacity: 0;
+}
+
+.pz-bundle { animation: pz-bundle var(--pz) ease-out infinite; }
+.pz-token { animation: pz-token var(--pz) ease-out infinite; }
+
+@keyframes pz-bundle {
+  0%, 48% { opacity: 0; transform: translateX(-10px); }
+  51%, 95% { opacity: 1; transform: translateX(0); }
+  98%, 100% { opacity: 0; }
+}
+
+@keyframes pz-token {
+  0%, 55% { opacity: 0; }
+  58%, 95% { opacity: 1; }
+  98%, 100% { opacity: 0; }
+}
+
+.pz-lock-body {
+  fill: var(--muted);
+}
+
+.pz-shackle {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+  animation: pz-shackle var(--pz) ease-in-out infinite;
+}
+
+.pz-lock-body {
+  animation: pz-lock var(--pz) ease-in-out infinite;
+}
+
+@keyframes pz-shackle {
+  0%, 52% { transform: translateY(-4px); stroke: var(--muted); }
+  55%, 95% { transform: translateY(0); stroke: var(--fg); }
+  98%, 100% { transform: translateY(-4px); stroke: var(--muted); }
+}
+
+@keyframes pz-lock {
+  0%, 52% { fill: var(--muted); }
+  55%, 95% { fill: var(--fg); }
+  98%, 100% { fill: var(--muted); }
+}
+
+.pz-chip {
+  animation: pz-chip var(--pz) ease-out infinite;
+}
+
+@keyframes pz-chip {
+  0%, 52% { stroke: #363636; }
+  55%, 95% { stroke: var(--muted); }
+  98%, 100% { stroke: #363636; }
+}
+
+/* Step 4: hours later, someone approves; the script carries on at line 4. */
+.pz-ask {
+  opacity: 0;
+  animation: pz-ask var(--pz) ease-out infinite;
+}
+
+@keyframes pz-ask {
+  0%, 62% { opacity: 0; transform: translateY(6px); }
+  65%, 95% { opacity: 1; transform: translateY(0); }
+  98%, 100% { opacity: 0; }
+}
+
+.pz-ask-text {
+  fill: var(--fg);
+  font-size: 13px !important;
+}
+
+.pz-approve {
+  fill: var(--fg);
+  animation: pz-press var(--pz) ease-out infinite;
+}
+
+.pz-approve-text {
+  font: 600 11.5px var(--mono);
+  fill: #000;
+}
+
+@keyframes pz-press {
+  0%, 69% { fill: var(--fg); }
+  70% { fill: #9a9a9a; }
+  73%, 100% { fill: var(--fg); }
+}
+
+.pz-ripple {
+  fill: none;
+  stroke: var(--fg);
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pz-ripple var(--pz) ease-out infinite;
+}
+
+@keyframes pz-ripple {
+  0%, 69% { opacity: 0; transform: scale(0.6); }
+  70% { opacity: 0.8; transform: scale(0.8); }
+  76%, 100% { opacity: 0; transform: scale(2.4); }
+}
+
+.pz-strike {
+  stroke: #454545;
+}
+
+.pz-cursor-b {
+  fill: rgb(255 255 255 / 0.1);
+  opacity: 0;
+  animation: pz-move-b var(--pz) step-end infinite;
+}
+
+@keyframes pz-move-b {
+  0% { opacity: 0; transform: translateY(0); }
+  74% { opacity: 1; transform: translateY(0); }
+  86% { opacity: 1; transform: translateY(22px); }
+  97% { opacity: 0; transform: translateY(0); }
+}
+
+.pz-resume-line {
+  fill: var(--text);
+  animation: pz-resume var(--pz) ease-out infinite;
+}
+
+@keyframes pz-resume {
+  0%, 73% { fill: var(--text); }
+  75%, 95% { fill: var(--fg); }
+  98%, 100% { fill: var(--text); }
+}
+
+.pz-done {
+  opacity: 0;
+  animation: pz-done var(--pz) ease-out infinite;
+}
+
+@keyframes pz-done {
+  0%, 76% { opacity: 0; }
+  79%, 95% { opacity: 1; }
+  98%, 100% { opacity: 0; }
+}
+
+/* 02 · What runs where — one 10 s timeline:
+   0–42% db.users() allowed and answered · 44–58% fetch() blocked ·
+   60–94% payments.refund() waits for you. */
+
+.rt {
+  --rt: 10s;
+}
+
+.rt-out {
+  fill: none;
+  stroke: #3a3a3a;
+  stroke-dasharray: 3 3;
+}
+
+.rt-box-fill {
+  fill: rgb(255 255 255 / 0.02);
+}
+
+.rt-wall {
+  fill: none;
+  stroke: #474747;
+  stroke-width: 1.5;
+}
+
+.rt-lock {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.5;
+}
+
+.rt-wire {
+  fill: none;
+  stroke: #4a4a4a;
+  stroke-dasharray: 3 3;
+}
+
+.rt-gate {
+  fill: #1b1b1b;
+  stroke: #4a4a4a;
+  animation: rt-gate var(--rt) linear infinite;
+}
+
+@keyframes rt-gate {
+  0%, 15% { stroke: #4a4a4a; }
+  16%, 22% { stroke: #9a9a9a; }
+  24%, 71% { stroke: #4a4a4a; }
+  72%, 94% { stroke: #9a9a9a; }
+  96%, 100% { stroke: #4a4a4a; }
+}
+
+/* Requests move along the wires themselves: an active route's dashes
+   brighten and march in the direction of travel (forward: the offset falls;
+   the answer coming back: it rises). Every stop is a multiple of the 6-unit
+   dash period, so the loop restarts without a jump. */
+.rt-w1,
+.rt-w2,
+.rt-w5 {
+  animation: var(--rt) linear infinite;
+}
+
+.rt-w1 { animation-name: rt-w1; }
+.rt-w2 { animation-name: rt-w2; }
+.rt-w5 { animation-name: rt-w5; }
+
+@keyframes rt-w1 {
+  0% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: 0; }
+  2% { stroke: var(--fg); stroke-width: 1.5; stroke-dashoffset: 0; }
+  16% { stroke: var(--fg); stroke-width: 1.5; stroke-dashoffset: -84; }
+  17% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: -84; }
+  30% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: -84; }
+  31% { stroke: var(--muted); stroke-width: 1.5; stroke-dashoffset: -84; }
+  40% { stroke: var(--muted); stroke-width: 1.5; stroke-dashoffset: -36; }
+  41% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: -36; }
+  60% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: -36; }
+  61% { stroke: var(--fg); stroke-width: 1.5; stroke-dashoffset: -36; }
+  72% { stroke: var(--fg); stroke-width: 1.5; stroke-dashoffset: -108; }
+  73% { stroke: #8a8a8a; stroke-width: 1.5; stroke-dashoffset: -108; }
+  94% { stroke: #8a8a8a; stroke-width: 1.5; stroke-dashoffset: -108; }
+  96%, 100% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: -108; }
+}
+
+@keyframes rt-w2 {
+  0%, 19% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: 0; }
+  20% { stroke: var(--fg); stroke-width: 1.5; stroke-dashoffset: 0; }
+  27% { stroke: var(--fg); stroke-width: 1.5; stroke-dashoffset: -42; }
+  28% { stroke: var(--muted); stroke-width: 1.5; stroke-dashoffset: -42; }
+  33% { stroke: var(--muted); stroke-width: 1.5; stroke-dashoffset: -12; }
+  34%, 100% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: -12; }
+}
+
+@keyframes rt-w5 {
+  0%, 44% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: 0; }
+  45% { stroke: var(--fg); stroke-width: 1.5; stroke-dashoffset: 0; }
+  51% { stroke: var(--fg); stroke-width: 1.5; stroke-dashoffset: -30; }
+  52%, 100% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: -30; }
+}
+
+/* Arrowheads follow the direction of travel: the forward head hides and
+   the back head shows while an answer runs back along the wire. */
+.rt-head {
+  fill: none;
+  stroke: #7a7a7a;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: var(--rt) linear infinite;
+}
+
+.rt-head-1f { animation-name: rt-head-1f; }
+.rt-head-1b { animation-name: rt-head-1b; opacity: 0; }
+.rt-head-2f { animation-name: rt-head-2f; }
+.rt-head-2b { animation-name: rt-head-2b; opacity: 0; }
+
+@keyframes rt-head-1f {
+  0% { opacity: 1; stroke: #7a7a7a; }
+  2% { opacity: 1; stroke: var(--fg); }
+  16% { opacity: 1; stroke: var(--fg); }
+  17% { opacity: 1; stroke: #7a7a7a; }
+  30% { opacity: 1; stroke: #7a7a7a; }
+  31% { opacity: 0; }
+  40% { opacity: 0; }
+  41% { opacity: 1; stroke: #7a7a7a; }
+  60% { opacity: 1; stroke: #7a7a7a; }
+  61% { opacity: 1; stroke: var(--fg); }
+  72% { opacity: 1; stroke: var(--fg); }
+  73% { opacity: 1; stroke: #8a8a8a; }
+  94% { opacity: 1; stroke: #8a8a8a; }
+  96%, 100% { opacity: 1; stroke: #7a7a7a; }
+}
+
+@keyframes rt-head-1b {
+  0%, 30% { opacity: 0; }
+  31%, 40% { opacity: 1; stroke: var(--muted); }
+  41%, 100% { opacity: 0; }
+}
+
+@keyframes rt-head-2f {
+  0%, 19% { opacity: 1; stroke: #7a7a7a; }
+  20%, 27% { opacity: 1; stroke: var(--fg); }
+  28%, 33% { opacity: 0; }
+  34%, 100% { opacity: 1; stroke: #7a7a7a; }
+}
+
+@keyframes rt-head-2b {
+  0%, 27% { opacity: 0; }
+  28%, 33% { opacity: 1; stroke: var(--muted); }
+  34%, 100% { opacity: 0; }
+}
+
+/* The database lights up softly when the request arrives. */
+.rt-db {
+  animation: rt-db var(--rt) linear infinite;
+}
+
+@keyframes rt-db {
+  0%, 26% { stroke: #333; }
+  27%, 31% { stroke: #9a9a9a; }
+  33%, 100% { stroke: #333; }
+}
+
+.rt-tag {
+  opacity: 0;
+}
+
+.rt-tag-1 { animation: rt-tag-1 var(--rt) ease-out infinite; }
+.rt-tag-2 { animation: rt-tag-2 var(--rt) ease-out infinite; }
+.rt-tag-3 { animation: rt-tag-3 var(--rt) ease-out infinite; }
+
+@keyframes rt-tag-1 {
+  0%, 15% { opacity: 0; }
+  17%, 39% { opacity: 1; }
+  42%, 100% { opacity: 0; }
+}
+
+@keyframes rt-tag-2 {
+  0%, 49% { opacity: 0; }
+  50%, 57% { opacity: 1; }
+  59%, 100% { opacity: 0; }
+}
+
+@keyframes rt-tag-3 {
+  0%, 71% { opacity: 0; }
+  73%, 94% { opacity: 1; }
+  96%, 100% { opacity: 0; }
+}
+
+.rt-x {
+  fill: none;
+  stroke: var(--fg);
+  stroke-width: 2;
+}
+
+.rt-line-1 { animation: rt-line-1 var(--rt) linear infinite; }
+.rt-line-2 { animation: rt-line-2 var(--rt) linear infinite; }
+.rt-line-3 { animation: rt-line-3 var(--rt) linear infinite; }
+
+@keyframes rt-line-1 {
+  0%, 1% { fill: var(--text); }
+  2%, 41% { fill: var(--fg); font-weight: 600; }
+  42%, 100% { fill: var(--text); }
+}
+
+@keyframes rt-line-2 {
+  0%, 43% { fill: var(--text); }
+  44%, 57% { fill: var(--fg); font-weight: 600; }
+  58%, 100% { fill: var(--text); }
+}
+
+@keyframes rt-line-3 {
+  0%, 59% { fill: var(--text); }
+  60%, 94% { fill: var(--fg); font-weight: 600; }
+  95%, 100% { fill: var(--text); }
+}
+
+
+
+/* Without motion, show the most telling moment of each story. */
+@media (prefers-reduced-motion: reduce) {
+  .pz *,
+  .rt *,
+  .sbx-state::before {
+    animation: none !important;
+  }
+  .pz-hold,
+  .pz-saved,
+  .pz-bundle,
+  .pz-token,
+  .pz-ask,
+  .pz-done,
+  .pz-cursor-b,
+  .rt-tag-3 {
+    opacity: 1;
+  }
+  .pz-cursor-a {
+    transform: translateY(66px);
+  }
+  .pz-page {
+    fill: var(--fg);
+  }
+}
+
+/* Memory map */
+
+.map-table {
+  border-top: var(--rule);
+}
+
+.map-row {
+  display: grid;
+  grid-template-columns: 96px 110px minmax(0, 1fr) 96px;
+  gap: 24px;
+  padding: 18px 0;
+  border-bottom: var(--rule-soft);
+  align-items: baseline;
+}
+
+.map-head {
+  padding: 10px 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.map-head span:last-child,
+.cost {
+  text-align: right;
+}
+
+.addr {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--dim);
+}
+
+.seg {
+  font-family: var(--mono);
+  font-size: 13.5px;
+  color: var(--fg);
+}
+
+.what {
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.cost {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--fg);
+}
+
+/* Use it: tabs and code */
+
+.tabs {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--recess);
+  overflow: hidden;
+}
+
+.tab-list {
+  display: flex;
+  border-bottom: var(--rule-soft);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tab {
+  font: 450 11px/1 var(--mono);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--dim);
+  background: transparent;
+  border: 0;
+  border-right: var(--rule-soft);
+  padding: 13px 18px;
+  cursor: pointer;
+  transition: color 140ms, background-color 140ms;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab[aria-selected="true"] {
+  color: var(--fg);
+  background: var(--bg);
+  box-shadow: inset 0 -1px var(--fg);
+}
+
+.code-install,
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 8px 8px 16px;
+  border-bottom: var(--rule-soft);
+}
+
+.code-install code {
+  font-size: 12.5px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.code-install .prompt {
+  color: var(--dim);
+}
+
+.code-head {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--dim);
+}
+
+.code-body pre {
+  margin: 0;
+  padding: 18px 16px 20px;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  tab-size: 2;
+  background: transparent !important;
+}
+
+.code-body code {
+  font-family: var(--mono);
+}
+
+.code-then {
+  border-top: var(--rule-soft);
+  border-bottom: 0;
+}
+
+/* Under the code block: setup guide link and the "works with" row */
+
+.more {
+  margin-top: 24px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.more a {
+  color: var(--fg);
+  text-decoration: underline;
+  text-decoration-color: var(--faint);
+  text-underline-offset: 3px;
+}
+
+.clients {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 20px 0 0;
+  border-top: var(--rule);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 26px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.clients::before {
+  content: "works with";
+  color: var(--dim);
+}
+
+/* Links with the GitHub mark */
+
+.gh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.top nav a[aria-current="page"] {
+  color: var(--fg);
+}
+
+/* Shell commands, colored like jevia.dev: programs bright, flags dim. */
+
+.sh {
+  font-family: var(--mono);
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sh-prompt {
+  color: var(--faint);
+}
+
+.sh-cmd {
+  color: var(--fg);
+}
+
+.sh-plain {
+  color: #a1a1aa;
+}
+
+.sh-opt,
+.sh-op {
+  color: #8a8a8a;
+}
+
+/* Standalone code blocks and commands (setup page) */
+
+.block {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--recess);
+  overflow: hidden;
+}
+
+.block > :last-child,
+.tab-panel > :last-child {
+  border-bottom: 0;
+}
+
+.block.code-install {
+  border-bottom: 1px solid var(--line);
+}
+
+.guide section > .block,
+.guide section > .tabs,
+.guide section > .kv {
+  max-width: 760px;
+}
+
+.guide-gap {
+  margin-top: 22px;
+  margin-bottom: 10px;
+}
+
+.guide-intro {
+  display: grid;
+  gap: 16px;
+  padding-top: 64px;
+}
+
+.guide h1 {
+  font-size: clamp(28px, 3.4vw, 36px);
+}
+
+.notes {
+  margin: 0;
+  padding: 16px 16px 18px 34px;
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted);
+  border-top: var(--rule-soft);
+}
+
+.notes li::marker {
+  color: var(--dim);
+}
+
+.notes code,
+.kv code,
+.callout code {
+  font-size: 12.5px;
+  color: var(--fg);
+}
+
+/* Key / value rows: the agent's tools, config fields, approvals, fixes */
+
+.kv {
+  margin: 8px 0 0;
+  border-top: var(--rule);
+}
+
+.kv > div {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 20px;
+  padding: 12px 0;
+  border-bottom: var(--rule-soft);
+}
+
+.kv-wide > div {
+  grid-template-columns: 230px minmax(0, 1fr);
+}
+
+.kv dt {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--fg);
+}
+
+.kv dd {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.kv-wide {
+  margin-top: 22px;
+}
+
+.callout {
+  max-width: 760px;
+  margin-top: 18px;
+  padding: 12px 14px;
+  border: var(--rule);
+  border-radius: 5px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.callout-warn {
+  border-color: #5a5a5a;
+  color: var(--text);
+}
+
+/* Narrow screens */
+
+/* Once the frame touches the screen edges, the crosshairs would hang off it. */
+@media (max-width: 1100px) {
+  .corners::before,
+  .corners::after {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  :root {
+    --pad: 20px;
+  }
+  main > section {
+    padding-top: 44px;
+    padding-bottom: 44px;
+  }
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 36px;
+  }
+  .kv > div,
+  .kv-wide > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .pz .pz-wide {
+    display: none;
+  }
+  .pz .pz-narrow {
+    display: block;
+  }
+  .sbx-canvas {
+    height: 180px;
+  }
+  .map-row {
+    grid-template-columns: 80px minmax(0, 1fr) auto;
+    gap: 6px 16px;
+  }
+  .map-head {
+    display: none;
+  }
+  .addr {
+    grid-area: 1 / 1;
+  }
+  .seg {
+    grid-area: 1 / 2;
+  }
+  .cost {
+    grid-area: 1 / 3;
+  }
+  .what {
+    grid-area: 2 / 1 / 3 / -1;
+  }
+  .top,
+  .bottom {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+}
+
+@media (max-width: 480px) {
+}
