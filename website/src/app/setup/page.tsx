@@ -201,6 +201,9 @@ function Table({ rows, wide }: { rows: { key: string; what: string }[]; wide?: b
   );
 }
 
+// Nothing here reads request data, so the page is prerendered to HTML.
+export const dynamic = "force-static";
+
 export default function SetupPage() {
   return (
     <div className="frame">

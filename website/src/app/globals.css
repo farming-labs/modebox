@@ -1121,90 +1121,6 @@ h1 {
   }
 }
 
-/* 03 · Behind the scenes: three short lines of steps; a highlight walks them. */
-
-.bts {
-  --bts: 9s;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  background: var(--recess);
-  max-width: 860px;
-}
-
-.lane {
-  display: grid;
-  grid-template-columns: 110px minmax(0, 1fr);
-  gap: 16px;
-  align-items: center;
-  padding: 14px 16px;
-  border-bottom: var(--rule-soft);
-}
-
-.lane:last-child {
-  border-bottom: 0;
-}
-
-.lane-when {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.lane-steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.lane-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.lane-arrow {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--dim);
-}
-
-.step {
-  display: grid;
-  gap: 2px;
-  padding: 7px 11px;
-  border: 1px solid #333;
-  border-radius: 4px;
-  background: #181818;
-  animation: bts-glow var(--bts) linear infinite;
-  animation-delay: calc(var(--n) * 1s);
-}
-
-.step-label {
-  font-size: 13px;
-  color: var(--fg);
-}
-
-.step-tool {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--dim);
-}
-
-@keyframes bts-glow {
-  0%, 9% { border-color: #8a8a8a; }
-  12%, 100% { border-color: #333; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .step {
-    animation: none;
-  }
-}
-
 /* Memory map */
 
 .map-table {
@@ -1546,10 +1462,6 @@ h1 {
   .hero {
     grid-template-columns: minmax(0, 1fr);
     gap: 36px;
-  }
-  .lane {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 10px;
   }
   .kv > div,
   .kv-wide > div {

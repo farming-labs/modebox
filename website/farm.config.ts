@@ -1,7 +1,8 @@
 import { defineConfig } from "@farm.js/core";
 
 export default defineConfig({
-  // Every page is prerendered to static HTML at build time.
+  // Both pages are static. Each also exports `dynamic = "force-static"`, which is
+  // what makes the build prerender it to HTML.
   routeRules: {
     "/": { render: "static" },
     "/setup": { render: "static" },
