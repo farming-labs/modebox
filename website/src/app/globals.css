@@ -1121,19 +1121,22 @@ h1 {
   }
 }
 
-/* 03 · Behind the scenes: three lanes of steps; a highlight walks them in order. */
+/* 03 · Behind the scenes: three short lines of steps; a highlight walks them. */
 
 .bts {
-  --bts: 10s;
+  --bts: 9s;
   border: 1px solid var(--line);
   border-radius: 5px;
   background: var(--recess);
-  overflow: hidden;
+  max-width: 860px;
 }
 
 .lane {
   display: grid;
-  grid-template-columns: 180px minmax(0, 1fr);
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  padding: 14px 16px;
   border-bottom: var(--rule-soft);
 }
 
@@ -1141,42 +1144,38 @@ h1 {
   border-bottom: 0;
 }
 
-.lane-head {
-  display: grid;
-  gap: 6px;
-  align-content: center;
-  padding: 18px 16px;
-  border-right: var(--rule-soft);
-}
-
 .lane-when {
   font-family: var(--mono);
   font-size: 12px;
-  color: var(--fg);
-}
-
-.lane-where {
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: var(--dim);
+  color: var(--muted);
 }
 
 .lane-steps {
   list-style: none;
   margin: 0;
-  padding: 18px 18px 18px 16px;
+  padding: 0;
   display: flex;
-  gap: 30px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lane-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lane-arrow {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--dim);
 }
 
 .step {
-  position: relative;
-  flex: 1;
-  min-width: 0;
   display: grid;
-  grid-template-rows: auto 1fr auto;
-  gap: 6px;
-  padding: 12px;
+  gap: 2px;
+  padding: 7px 11px;
   border: 1px solid #333;
   border-radius: 4px;
   background: #181818;
@@ -1184,44 +1183,20 @@ h1 {
   animation-delay: calc(var(--n) * 1s);
 }
 
-.step:not(:last-child)::after {
-  content: "→";
-  position: absolute;
-  right: -23px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-family: var(--mono);
+.step-label {
   font-size: 13px;
-  color: var(--dim);
+  color: var(--fg);
 }
 
 .step-tool {
   font-family: var(--mono);
-  font-size: 12.5px;
-  color: var(--fg);
-  overflow-wrap: anywhere;
-}
-
-.step-what {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--muted);
-}
-
-.step-out {
-  justify-self: start;
-  font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--dim);
-  border: 1px dashed #3a3a3a;
-  border-radius: 3px;
-  padding: 2px 6px;
 }
 
 @keyframes bts-glow {
-  0% { border-color: #9a9a9a; background: #1f1f1f; }
-  8% { border-color: #9a9a9a; background: #1f1f1f; }
-  11%, 100% { border-color: #333; background: #181818; }
+  0%, 9% { border-color: #8a8a8a; }
+  12%, 100% { border-color: #333; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1574,22 +1549,7 @@ h1 {
   }
   .lane {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .lane-head {
-    border-right: 0;
-    border-bottom: var(--rule-soft);
-  }
-  .lane-steps {
-    flex-direction: column;
-    gap: 26px;
-  }
-  .step:not(:last-child)::after {
-    content: "↓";
-    right: auto;
-    left: 50%;
-    top: auto;
-    bottom: -22px;
-    transform: translateX(-50%);
+    gap: 10px;
   }
   .kv > div,
   .kv-wide > div {
