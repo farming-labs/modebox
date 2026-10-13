@@ -64,6 +64,8 @@ Measured against Vercel Run, the closest package with the same model (QuickJS on
 | resume after 200 host calls | 30.9 ms | **2.2 ms** | 14× |
 | CPU: sum 1..10M | 488 ms | 511 ms | ≈ (same interpreter) |
 
+These numbers are from modebox 0.1.0 (wasmtime 44), measured on 2026-10-10; 0.1.1 hasn't been re-measured yet. The two Node resume rows are too high: the benchmark's resume made the tool pause a second time, so they time two pauses instead of one. The Rust figures below time a single resume.
+
 From Rust directly (`cargo run --release -p modebox-core --example bench`), a trivial run is 0.096 ms, interrupt + resume is 1.8 ms, and resume after 200 calls is 0.28 ms.
 
 **Where it isn't faster:** CPU-bound JS. Both run the QuickJS bytecode interpreter compiled to wasm. Fuel metering costs about 10%; turn it off with `EngineConfig { metering: false }`. If heavy compute matters, a V8-isolate tier is the next step (see the roadmap).
