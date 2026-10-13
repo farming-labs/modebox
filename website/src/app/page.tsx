@@ -1,4 +1,7 @@
+import { CodeTabs, type CodeTab } from "../components/code-tabs";
 import { Command } from "../components/command";
+import { FigPause } from "../components/fig-pause";
+import { FigRuntime } from "../components/fig-runtime";
 import { MemoryField } from "../components/memory-field";
 
 const REPO = "https://github.com/farming-labs/modebox";
@@ -38,12 +41,89 @@ const MAP = [
   },
 ];
 
-const STEPS = [
-  { cmd: "cargo install modebox", note: "The CLI, which is also the MCP server." },
-  { cmd: "modebox -c modebox.json types", note: "See the typed API your agent will get." },
+const TABS: CodeTab[] = [
   {
-    cmd: "claude mcp add --scope project modebox -- modebox mcp -c modebox.json",
-    note: "Connect Claude Code.",
+    id: "mcp",
+    label: "MCP",
+    install: "cargo install modebox",
+    file: "modebox.json",
+    lang: "json",
+    code: `{
+  "mcpServers": {
+    "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"] }
+  },
+  "approve": ["github.create_*", "github.merge_*"]
+}`,
+    then: "claude mcp add --scope project modebox -- modebox mcp -c modebox.json",
+  },
+  {
+    id: "node",
+    label: "Node",
+    install: "npm install modebox",
+    file: "agent.ts",
+    lang: "ts",
+    code: `import { createRunner, requireApproval } from "modebox";
+
+const runner = createRunner({ continuationSecret: process.env.SECRET });
+const hostFunctions = {
+  payments: { refund: requireApproval(refund) },
+};
+
+// \`script\` is the code your agent wrote.
+const r = await runner.run({ source: script, hostFunctions });
+
+if (r.status === "interrupted") {
+  // Later, even in another process:
+  await runner.run({
+    hostFunctions,
+    continuation: r.continuation,
+    resolutions: [{ interruptionId: r.interruptions[0].id, value: true }],
+  });
+}`,
+  },
+  {
+    id: "python",
+    label: "Python",
+    install: "pip install modebox",
+    file: "agent.py",
+    lang: "py",
+    code: `import os
+import modebox
+
+runner = modebox.Runner(continuation_secret=os.environ["SECRET"])
+host_functions = {"payments": {"refund": modebox.require_approval(refund)}}
+
+# \`script\` is the code your agent wrote.
+r = await runner.run(script, host_functions=host_functions)
+
+if r.status == "interrupted":
+    # Later, even in another process:
+    await runner.run(
+        host_functions=host_functions,
+        continuation=r.continuation,
+        resolutions=[modebox.approve(r.interruptions[0].id)],
+    )`,
+  },
+  {
+    id: "rust",
+    label: "Rust",
+    install: "cargo add modebox-core",
+    file: "main.rs",
+    lang: "rs",
+    code: `use modebox_core::*;
+
+let engine = Engine::new()?;
+let mut tools = Toolbox::new();
+tools.add(Tool::new("payments.refund", refund).approval(Approval::Always));
+
+// \`script\` is the code your agent wrote.
+let r = engine.run(script, &tools, RunOptions::default()).await;
+
+if let Outcome::Suspended(s) = r.outcome {
+    // Later, even in another process:
+    let approve = [(s.interrupts[0].id, Resolution::Approve)];
+    engine.resume(&s.continuation, approve, &tools, RunOptions::default()).await;
+}`,
   },
 ];
 
@@ -56,6 +136,14 @@ function Logo() {
       <rect x="6" y="5" width="2" height="8" fill="currentColor" />
       <rect x="10" y="5" width="2" height="8" fill="currentColor" />
     </svg>
+  );
+}
+
+function Label({ n, children }: { n: string; children: string }) {
+  return (
+    <p className="label">
+      <span>{n}</span> {children}
+    </p>
   );
 }
 
@@ -76,31 +164,55 @@ export default function HomePage() {
       <main>
         <section className="intro corners">
           <p className="eyebrow">v0.1 · MIT · code mode for AI agents</p>
-          <h1>
-            Code mode with a pause button.
-          </h1>
-          <div className="intro-row">
-            <p className="lede">
-              Your agent writes one script that calls your tools. modebox runs it in a WebAssembly
-              sandbox inside your process, and can freeze it mid-run until you approve.
+          <h1>Code mode with a pause button.</h1>
+          <p className="lede">
+            Your agent writes one script that calls your tools. modebox runs it in a WebAssembly
+            sandbox inside your process, about 0.1 ms per run, and can freeze it mid-run until you
+            approve.
+          </p>
+          <div className="install">
+            <Command>cargo install modebox</Command>
+            <p>
+              Or <code>npm install modebox</code> · <code>pip install modebox</code>
             </p>
-            <div className="install">
-              <Command>cargo install modebox</Command>
-              <p>
-                Or <code>npm install modebox</code> · <code>pip install modebox</code>
-              </p>
-            </div>
           </div>
         </section>
 
         <section className="live corners" aria-labelledby="live-title">
-          <p className="eyebrow" id="live-title">
-            Live · this is the sandbox's memory. Press pause.
+          <Label n="01">live</Label>
+          <p className="section-copy" id="live-title">
+            This is the sandbox's memory, one square per 4 KiB page. Press pause, or wait for the
+            refund to ask for approval.
           </p>
           <MemoryField />
         </section>
 
+        <section className="explain corners" aria-labelledby="pause-title">
+          <Label n="02">pause</Label>
+          <h2 id="pause-title">How a pause works</h2>
+          <p className="section-copy">
+            When a call needs your approval, modebox doesn't keep the process waiting, and doesn't
+            replay the script later. It saves the run itself: only the memory pages that changed,
+            compressed and sealed into a token. Approve it whenever and wherever you like, and the
+            script carries on from that exact line.
+          </p>
+          <FigPause />
+        </section>
+
+        <section className="explain corners" aria-labelledby="runtime-title">
+          <Label n="03">inside</Label>
+          <h2 id="runtime-title">What runs where</h2>
+          <p className="section-copy">
+            Your script never becomes native code. QuickJS-ng, a small JavaScript engine, is
+            compiled to WebAssembly once, booted once with Wizer, and turned into machine code by
+            Cranelift. Every run gets a copy-on-write copy of that booted engine. The sandbox has
+            exactly two ways out: <code>emit()</code> to call your tools, and a clock.
+          </p>
+          <FigRuntime />
+        </section>
+
         <section className="map corners" aria-labelledby="map-title">
+          <Label n="04">at a glance</Label>
           <h2 id="map-title">Memory map</h2>
           <div className="map-table" role="table" aria-label="What modebox is made of">
             <div className="map-row map-head" role="row">
@@ -128,19 +240,14 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="start corners" aria-labelledby="start-title">
-          <h2 id="start-title">Run it</h2>
-          <ol className="steps">
-            {STEPS.map((step, i) => (
-              <li key={step.cmd}>
-                <span className="step-n">{String(i + 1).padStart(2, "0")}</span>
-                <div className="step-body">
-                  <Command>{step.cmd}</Command>
-                  <p>{step.note}</p>
-                </div>
-              </li>
-            ))}
-          </ol>
+        <section className="use corners" aria-labelledby="use-title">
+          <Label n="05">use it</Label>
+          <h2 id="use-title">Pick how you run it</h2>
+          <p className="section-copy">
+            Plug it into your agent over MCP, or call it from your own code. Each example pauses on a
+            refund and resumes after approval.
+          </p>
+          <CodeTabs tabs={TABS} />
           <p className="more">
             opencode, Codex, Cursor and other agents: <a href={GUIDE}>the setup guide</a>.
           </p>

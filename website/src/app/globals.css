@@ -156,10 +156,14 @@ main > section {
 }
 
 h2 {
-  font-size: 20px;
-  font-weight: 510;
-  letter-spacing: -0.02em;
-  margin-bottom: 28px;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  margin-bottom: 12px;
+}
+
+.map h2 {
+  margin-bottom: 24px;
 }
 
 /* Commands with a copy button */
@@ -216,37 +220,32 @@ h2 {
 
 .intro {
   display: grid;
-  gap: 22px;
+  gap: 20px;
   padding-top: 72px;
+  padding-bottom: 64px;
 }
 
 h1 {
-  font-size: clamp(40px, 7.2vw, 78px);
+  font-size: clamp(30px, 4vw, 44px);
   font-weight: 500;
-  line-height: 1;
-  letter-spacing: -0.05em;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  max-width: 20ch;
   text-wrap: balance;
-}
-
-
-.intro-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-  gap: 40px;
-  align-items: start;
-  margin-top: 8px;
 }
 
 .lede {
   font-size: 16px;
   line-height: 1.65;
   color: var(--muted);
-  max-width: 48ch;
+  max-width: 54ch;
 }
 
 .install {
   display: grid;
   gap: 10px;
+  max-width: 400px;
+  margin-top: 6px;
 }
 
 .install p {
@@ -260,12 +259,39 @@ h1 {
   color: var(--muted);
 }
 
+/* Section labels and copy */
+
+.label {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+
+.label span {
+  color: var(--dim);
+  margin-right: 6px;
+}
+
+.section-copy {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--muted);
+  max-width: 64ch;
+  margin-bottom: 28px;
+}
+
+.section-copy code {
+  font-size: 13px;
+  color: var(--fg);
+}
+
 /* Live memory field */
 
 .live {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
 }
 
 /* Block layout, so the canvas's backing-store size can never feed back
@@ -395,6 +421,111 @@ h1 {
   white-space: nowrap;
 }
 
+/* Figures */
+
+.fig {
+  margin: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.fig svg {
+  display: block;
+  width: 100%;
+  min-width: 860px;
+  height: auto;
+}
+
+.f-box {
+  fill: var(--recess);
+  stroke: #333;
+}
+
+.f-box-hi {
+  stroke: #5a5a5a;
+}
+
+.f-outer {
+  fill: none;
+  stroke: #353535;
+  stroke-dasharray: 4 4;
+}
+
+.f-sandbox {
+  fill: rgb(255 255 255 / 0.015);
+  stroke: #6e6e6e;
+}
+
+.f-rule {
+  stroke: #2d2d2d;
+  stroke-dasharray: 3 3;
+}
+
+.f-dash {
+  fill: none;
+  stroke: rgb(255 255 255 / 0.45);
+  stroke-dasharray: 3 3;
+}
+
+.f-chip {
+  fill: #1d1d1d;
+  stroke: #363636;
+}
+
+.f-cell {
+  fill: #262626;
+}
+
+.f-on {
+  fill: var(--fg);
+}
+
+.f-arrow {
+  fill: none;
+  stroke: #6e6e6e;
+  stroke-dasharray: 3 3;
+}
+
+.f-arrow-hi {
+  stroke: var(--text);
+}
+
+.f-mono {
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.f-sans {
+  font-family: var(--sans);
+  font-size: 12px;
+}
+
+.f-title {
+  font-size: 13.5px;
+  font-weight: 500;
+  fill: var(--fg);
+}
+
+.f-hi {
+  fill: var(--fg);
+}
+
+.f-text {
+  fill: var(--text);
+}
+
+.f-muted {
+  fill: var(--muted);
+}
+
+.f-dim {
+  fill: var(--dim);
+}
+
+.f-faint {
+  fill: #454545;
+}
+
 /* Memory map */
 
 .map-table {
@@ -446,39 +577,96 @@ h1 {
   color: var(--fg);
 }
 
-/* Run it */
+/* Use it: tabs and code */
 
-.steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 22px;
-  max-width: 720px;
+.tabs {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--recess);
+  overflow: hidden;
 }
 
-.steps li {
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
-  align-items: start;
+.tab-list {
+  display: flex;
+  border-bottom: var(--rule-soft);
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
-.step-n {
-  font-family: var(--mono);
-  font-size: 12px;
+.tab {
+  font: 450 11px/1 var(--mono);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
   color: var(--dim);
-  padding-top: 12px;
+  background: transparent;
+  border: 0;
+  border-right: var(--rule-soft);
+  padding: 13px 18px;
+  cursor: pointer;
+  transition: color 140ms, background-color 140ms;
 }
 
-.step-body {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
+.tab:hover {
+  color: var(--text);
 }
 
-.step-body p {
-  font-size: 13.5px;
-  color: var(--muted);
+.tab[aria-selected="true"] {
+  color: var(--fg);
+  background: var(--bg);
+  box-shadow: inset 0 -1px var(--fg);
+}
+
+.code-install,
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 8px 8px 16px;
+  border-bottom: var(--rule-soft);
+}
+
+.code-install code {
+  font-size: 12.5px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.code-install .prompt {
+  color: var(--dim);
+}
+
+.code-head {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--dim);
+}
+
+.code-body {
+  margin: 0;
+  padding: 18px 16px 20px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text);
+  tab-size: 2;
+}
+
+.code-then {
+  border-top: var(--rule-soft);
+  border-bottom: 0;
+}
+
+.tok-kw {
+  color: var(--fg);
+}
+
+.tok-str {
+  color: #a3a3a3;
+}
+
+.tok-com {
+  color: var(--dim);
 }
 
 .more {
@@ -530,10 +718,6 @@ h1 {
     padding-top: 44px;
     padding-bottom: 44px;
   }
-  .intro-row {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 24px;
-  }
   .field-canvas {
     height: 170px;
   }
@@ -544,8 +728,17 @@ h1 {
   .map-head {
     display: none;
   }
+  .addr {
+    grid-area: 1 / 1;
+  }
+  .seg {
+    grid-area: 1 / 2;
+  }
+  .cost {
+    grid-area: 1 / 3;
+  }
   .what {
-    grid-column: 1 / -1;
+    grid-area: 2 / 1 / 3 / -1;
   }
   .top,
   .bottom {
