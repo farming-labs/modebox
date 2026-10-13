@@ -162,7 +162,8 @@ h2 {
   margin-bottom: 12px;
 }
 
-.map h2 {
+.map h2,
+.fig-h2 {
   margin-bottom: 24px;
 }
 
@@ -483,8 +484,19 @@ h1 {
 .fig svg {
   display: block;
   width: 100%;
-  min-width: 860px;
   height: auto;
+}
+
+.rt svg {
+  min-width: 760px;
+}
+
+.fig-cap {
+  margin-top: 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted);
+  max-width: 70ch;
 }
 
 .f-box {
@@ -577,27 +589,51 @@ h1 {
   fill: #454545;
 }
 
-/* The pause figure */
+/* Shared figure pieces */
 
-.pz {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  --pz: 9s;
-}
-
-.pz svg {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
-.pz .f-mono {
+.pz .f-mono,
+.rt .f-mono {
   font-size: 12px;
 }
 
-.pz-token-text {
-  font-size: 16px !important;
+.pz .f-sans,
+.rt .f-sans {
+  font-size: 12.5px;
+}
+
+.pz-n {
+  font: 600 13px var(--mono);
+  fill: var(--fg);
+}
+
+.pz-title {
+  font: 500 13.5px var(--sans);
+  fill: var(--fg);
+}
+
+.pz-card {
+  fill: #1b1b1b;
+  stroke: #363636;
+}
+
+.pz-badge {
+  fill: var(--fg);
+}
+
+.pz-badge-text {
+  font: 500 11.5px var(--mono);
+  fill: #000;
+}
+
+/* 01 · How a pause works — one 10 s timeline:
+   0–28% runs · 30–46% saves · 48–62% locks · 62–96% approved, carries on. */
+
+.pz {
+  --pz: 10s;
+}
+
+.pz .pz-narrow {
+  display: none;
 }
 
 .pz-frame {
@@ -611,34 +647,23 @@ h1 {
 .pz-frame-3 { animation-name: pz-frame-3; }
 .pz-frame-4 { animation-name: pz-frame-4; }
 
-@keyframes pz-frame-1 { 0%, 30% { stroke: #7a7a7a; } 32%, 100% { stroke: #333; } }
-@keyframes pz-frame-2 { 0%, 30% { stroke: #333; } 32%, 50% { stroke: #7a7a7a; } 52%, 100% { stroke: #333; } }
-@keyframes pz-frame-3 { 0%, 50% { stroke: #333; } 52%, 70% { stroke: #7a7a7a; } 72%, 100% { stroke: #333; } }
-@keyframes pz-frame-4 { 0%, 70% { stroke: #333; } 72%, 96% { stroke: #7a7a7a; } 98%, 100% { stroke: #333; } }
+@keyframes pz-frame-1 { 0%, 28% { stroke: #8a8a8a; } 30%, 100% { stroke: #333; } }
+@keyframes pz-frame-2 { 0%, 30% { stroke: #333; } 31%, 46% { stroke: #8a8a8a; } 48%, 100% { stroke: #333; } }
+@keyframes pz-frame-3 { 0%, 47% { stroke: #333; } 48%, 61% { stroke: #8a8a8a; } 62%, 100% { stroke: #333; } }
+@keyframes pz-frame-4 { 0%, 61% { stroke: #333; } 62%, 96% { stroke: #8a8a8a; } 98%, 100% { stroke: #333; } }
 
-.pz-cursor-a,
-.pz-cursor-b {
-  fill: rgb(255 255 255 / 0.05);
-  stroke: none;
-}
-
+/* Step 1: the cursor walks to the refund and stops. */
 .pz-cursor-a {
-  animation:
-    pz-move-a var(--pz) step-end infinite,
-    pz-tint-a var(--pz) step-end infinite;
+  fill: rgb(255 255 255 / 0.06);
+  animation: pz-move-a var(--pz) step-end infinite;
 }
 
 @keyframes pz-move-a {
-  0% { transform: translateY(0); }
-  7% { transform: translateY(24px); }
-  14% { transform: translateY(48px); }
-  21% { transform: translateY(72px); }
-}
-
-@keyframes pz-tint-a {
-  0% { fill: rgb(255 255 255 / 0.05); }
-  24% { fill: rgb(255 255 255 / 0.1); }
-  97% { fill: rgb(255 255 255 / 0.05); }
+  0% { transform: translateY(0); fill: rgb(255 255 255 / 0.06); }
+  6% { transform: translateY(22px); }
+  12% { transform: translateY(44px); }
+  18% { transform: translateY(66px); fill: rgb(255 255 255 / 0.12); }
+  97% { transform: translateY(66px); fill: rgb(255 255 255 / 0.06); }
 }
 
 .pz-hold {
@@ -647,104 +672,375 @@ h1 {
 }
 
 @keyframes pz-hold {
-  0%, 23% { opacity: 0; }
-  26%, 95% { opacity: 1; }
+  0%, 19% { opacity: 0; }
+  21%, 95% { opacity: 1; }
   98%, 100% { opacity: 0; }
 }
 
+/* Links between steps light up as the story moves along them. */
+.pz-link-path {
+  fill: none;
+  stroke: #3a3a3a;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+}
+
+.pz-link-label {
+  fill: var(--dim);
+  font-size: 11px !important;
+}
+
+.pz-link-1 .pz-link-path { animation: pz-line-1 var(--pz) linear infinite; }
+.pz-link-2 .pz-link-path { animation: pz-line-2 var(--pz) linear infinite; }
+.pz-link-3 .pz-link-path { animation: pz-line-3 var(--pz) linear infinite; }
+.pz-link-1 .pz-link-label { animation: pz-label-1 var(--pz) linear infinite; }
+.pz-link-2 .pz-link-label { animation: pz-label-2 var(--pz) linear infinite; }
+.pz-link-3 .pz-link-label { animation: pz-label-3 var(--pz) linear infinite; }
+
+@keyframes pz-line-1 {
+  0%, 25% { stroke: #3a3a3a; stroke-dashoffset: 0; }
+  27% { stroke: var(--fg); }
+  33% { stroke: var(--fg); stroke-dashoffset: -24; }
+  35%, 100% { stroke: #3a3a3a; }
+}
+@keyframes pz-line-2 {
+  0%, 43% { stroke: #3a3a3a; stroke-dashoffset: 0; }
+  45% { stroke: var(--fg); }
+  51% { stroke: var(--fg); stroke-dashoffset: -24; }
+  53%, 100% { stroke: #3a3a3a; }
+}
+@keyframes pz-line-3 {
+  0%, 59% { stroke: #3a3a3a; stroke-dashoffset: 0; }
+  61% { stroke: var(--fg); }
+  66% { stroke: var(--fg); stroke-dashoffset: -24; }
+  68%, 100% { stroke: #3a3a3a; }
+}
+@keyframes pz-label-1 { 0%, 25% { fill: var(--dim); } 27%, 33% { fill: var(--fg); } 35%, 100% { fill: var(--dim); } }
+@keyframes pz-label-2 { 0%, 43% { fill: var(--dim); } 45%, 51% { fill: var(--fg); } 53%, 100% { fill: var(--dim); } }
+@keyframes pz-label-3 { 0%, 59% { fill: var(--dim); } 61%, 66% { fill: var(--fg); } 68%, 100% { fill: var(--dim); } }
+
+/* Step 2: the changed pages light up, one after another. */
 .pz-page {
   animation: pz-page var(--pz) ease-out infinite;
-  animation-delay: calc(var(--i, 0) * 90ms);
+  animation-delay: calc(var(--i, 0) * 70ms);
 }
 
 @keyframes pz-page {
   0%, 32% { fill: #262626; }
-  35%, 95% { fill: var(--fg); }
+  34%, 95% { fill: var(--fg); }
   98%, 100% { fill: #262626; }
 }
 
+.pz-saved {
+  opacity: 0;
+  animation: pz-saved var(--pz) ease-out infinite;
+}
+
+@keyframes pz-saved {
+  0%, 42% { opacity: 0; }
+  44%, 95% { opacity: 1; }
+  98%, 100% { opacity: 0; }
+}
+
+/* Step 3: the pages bundle up and the lock snaps shut. */
 .pz-bundle,
 .pz-token {
   opacity: 0;
 }
 
-.pz-bundle {
-  animation: pz-bundle var(--pz) ease-out infinite;
-}
+.pz-bundle { animation: pz-bundle var(--pz) ease-out infinite; }
+.pz-token { animation: pz-token var(--pz) ease-out infinite; }
 
 @keyframes pz-bundle {
-  0%, 51% { opacity: 0; }
-  54%, 95% { opacity: 1; }
+  0%, 48% { opacity: 0; transform: translateX(-10px); }
+  51%, 95% { opacity: 1; transform: translateX(0); }
   98%, 100% { opacity: 0; }
-}
-
-.pz-chip1 { animation: pz-chip1 var(--pz) ease-out infinite; }
-.pz-chip2 { animation: pz-chip2 var(--pz) ease-out infinite; }
-
-@keyframes pz-chip1 {
-  0%, 56% { stroke: #363636; }
-  58%, 95% { stroke: var(--text); }
-  98%, 100% { stroke: #363636; }
-}
-
-@keyframes pz-chip2 {
-  0%, 60% { stroke: #363636; }
-  62%, 95% { stroke: var(--text); }
-  98%, 100% { stroke: #363636; }
-}
-
-.pz-token {
-  animation: pz-token var(--pz) ease-out infinite;
 }
 
 @keyframes pz-token {
-  0%, 64% { opacity: 0; }
-  67%, 95% { opacity: 1; }
+  0%, 55% { opacity: 0; }
+  58%, 95% { opacity: 1; }
   98%, 100% { opacity: 0; }
 }
 
-.pz-cursor-b {
-  opacity: 0;
-  animation:
-    pz-show-b var(--pz) step-end infinite,
-    pz-move-b var(--pz) step-end infinite;
+.pz-lock-body {
+  fill: var(--muted);
 }
 
-@keyframes pz-show-b {
-  0% { opacity: 0; }
-  72% { opacity: 1; }
-  97% { opacity: 0; }
+.pz-shackle {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+  animation: pz-shackle var(--pz) ease-in-out infinite;
+}
+
+.pz-lock-body {
+  animation: pz-lock var(--pz) ease-in-out infinite;
+}
+
+@keyframes pz-shackle {
+  0%, 52% { transform: translateY(-4px); stroke: var(--muted); }
+  55%, 95% { transform: translateY(0); stroke: var(--fg); }
+  98%, 100% { transform: translateY(-4px); stroke: var(--muted); }
+}
+
+@keyframes pz-lock {
+  0%, 52% { fill: var(--muted); }
+  55%, 95% { fill: var(--fg); }
+  98%, 100% { fill: var(--muted); }
+}
+
+.pz-chip {
+  animation: pz-chip var(--pz) ease-out infinite;
+}
+
+@keyframes pz-chip {
+  0%, 52% { stroke: #363636; }
+  55%, 95% { stroke: var(--muted); }
+  98%, 100% { stroke: #363636; }
+}
+
+/* Step 4: hours later, someone approves; the script carries on at line 4. */
+.pz-ask {
+  opacity: 0;
+  animation: pz-ask var(--pz) ease-out infinite;
+}
+
+@keyframes pz-ask {
+  0%, 62% { opacity: 0; transform: translateY(6px); }
+  65%, 95% { opacity: 1; transform: translateY(0); }
+  98%, 100% { opacity: 0; }
+}
+
+.pz-ask-text {
+  fill: var(--fg);
+  font-size: 13px !important;
+}
+
+.pz-approve {
+  fill: var(--fg);
+  animation: pz-press var(--pz) ease-out infinite;
+}
+
+.pz-approve-text {
+  font: 600 11.5px var(--mono);
+  fill: #000;
+}
+
+@keyframes pz-press {
+  0%, 69% { fill: var(--fg); }
+  70% { fill: #9a9a9a; }
+  73%, 100% { fill: var(--fg); }
+}
+
+.pz-ripple {
+  fill: none;
+  stroke: var(--fg);
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pz-ripple var(--pz) ease-out infinite;
+}
+
+@keyframes pz-ripple {
+  0%, 69% { opacity: 0; transform: scale(0.6); }
+  70% { opacity: 0.8; transform: scale(0.8); }
+  76%, 100% { opacity: 0; transform: scale(2.4); }
+}
+
+.pz-strike {
+  stroke: #454545;
+}
+
+.pz-cursor-b {
+  fill: rgb(255 255 255 / 0.1);
+  opacity: 0;
+  animation: pz-move-b var(--pz) step-end infinite;
 }
 
 @keyframes pz-move-b {
-  0% { transform: translateY(0); }
-  84% { transform: translateY(24px); }
-  97% { transform: translateY(0); }
+  0% { opacity: 0; transform: translateY(0); }
+  74% { opacity: 1; transform: translateY(0); }
+  86% { opacity: 1; transform: translateY(22px); }
+  97% { opacity: 0; transform: translateY(0); }
 }
 
-.pz-done,
-.pz-done-line {
-  animation: pz-done var(--pz) ease-out infinite;
+.pz-resume-line {
+  fill: var(--text);
+  animation: pz-resume var(--pz) ease-out infinite;
+}
+
+@keyframes pz-resume {
+  0%, 73% { fill: var(--text); }
+  75%, 95% { fill: var(--fg); }
+  98%, 100% { fill: var(--text); }
 }
 
 .pz-done {
   opacity: 0;
+  animation: pz-done var(--pz) ease-out infinite;
 }
 
 @keyframes pz-done {
-  0%, 71% { opacity: 0; fill: var(--text); }
-  74%, 95% { opacity: 1; fill: var(--fg); }
+  0%, 76% { opacity: 0; }
+  79%, 95% { opacity: 1; }
   98%, 100% { opacity: 0; }
 }
 
-.pz-done-line {
-  animation-name: pz-done-line;
+/* 02 · What runs where — one 10 s timeline:
+   0–42% db.users() allowed and answered · 44–58% fetch() blocked ·
+   60–94% payments.refund() waits for you. */
+
+.rt {
+  --rt: 10s;
 }
 
-@keyframes pz-done-line {
-  0%, 71% { fill: var(--text); }
-  74%, 95% { fill: var(--fg); }
-  98%, 100% { fill: var(--text); }
+.rt-out {
+  fill: none;
+  stroke: #3a3a3a;
+  stroke-dasharray: 3 3;
+}
+
+.rt-box-fill {
+  fill: rgb(255 255 255 / 0.02);
+}
+
+.rt-wall {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+}
+
+.rt-lock {
+  fill: none;
+  stroke: var(--fg);
+  stroke-width: 1.5;
+}
+
+.rt-wire {
+  fill: none;
+  stroke: #4a4a4a;
+  stroke-dasharray: 3 3;
+}
+
+.rt-gate {
+  fill: #1b1b1b;
+  stroke: #4a4a4a;
+  animation: rt-gate var(--rt) linear infinite;
+}
+
+@keyframes rt-gate {
+  0%, 17% { stroke: #4a4a4a; }
+  18%, 24% { stroke: var(--fg); }
+  25%, 75% { stroke: #4a4a4a; }
+  76%, 94% { stroke: var(--fg); }
+  96%, 100% { stroke: #4a4a4a; }
+}
+
+.rt-dot {
+  fill: var(--fg);
+  opacity: 0;
+}
+
+.rt-dot-1 { animation: rt-dot-1 var(--rt) linear infinite; }
+.rt-dot-1b { animation: rt-dot-1b var(--rt) linear infinite; fill: var(--muted); }
+.rt-dot-2 { animation: rt-dot-2 var(--rt) linear infinite; }
+.rt-dot-3 { animation: rt-dot-3 var(--rt) linear infinite; }
+
+@keyframes rt-dot-1 {
+  0% { opacity: 0; transform: translate(0, 0); }
+  2% { opacity: 1; transform: translate(0, 0); }
+  8% { transform: translate(78px, 0); }
+  11% { transform: translate(78px, 45px); }
+  18% { transform: translate(234px, 45px); }
+  21% { transform: translate(234px, 45px); }
+  25% { transform: translate(385px, 45px); }
+  27% { transform: translate(414px, 45px); }
+  30% { transform: translate(414px, -36px); }
+  31.5% { opacity: 1; transform: translate(448px, -36px); }
+  32%, 100% { opacity: 0; transform: translate(448px, -36px); }
+}
+
+@keyframes rt-dot-1b {
+  0%, 32% { opacity: 0; transform: translate(0, 0); }
+  32.5% { opacity: 1; transform: translate(0, 0); }
+  34% { transform: translate(-34px, 0); }
+  35.5% { transform: translate(-34px, 81px); }
+  39% { transform: translate(-370px, 81px); }
+  40% { transform: translate(-370px, 36px); }
+  41.5% { opacity: 1; transform: translate(-448px, 36px); }
+  42%, 100% { opacity: 0; transform: translate(-448px, 36px); }
+}
+
+@keyframes rt-dot-2 {
+  0%, 44% { opacity: 0; transform: translate(0, 0); }
+  45% { opacity: 1; transform: translate(0, 0); }
+  50% { opacity: 1; transform: translate(0, -44px); }
+  53%, 100% { opacity: 0; transform: translate(0, -44px); }
+}
+
+@keyframes rt-dot-3 {
+  0%, 60% { opacity: 0; transform: translate(0, 0); }
+  61% { opacity: 1; transform: translate(0, 0); }
+  66% { transform: translate(78px, 0); }
+  67% { transform: translate(78px, 5px); }
+  75% { transform: translate(234px, 5px); }
+  94% { opacity: 1; transform: translate(234px, 5px); }
+  96%, 100% { opacity: 0; transform: translate(234px, 5px); }
+}
+
+.rt-tag {
+  opacity: 0;
+}
+
+.rt-tag-1 { animation: rt-tag-1 var(--rt) ease-out infinite; }
+.rt-tag-2 { animation: rt-tag-2 var(--rt) ease-out infinite; }
+.rt-tag-3 { animation: rt-tag-3 var(--rt) ease-out infinite; }
+
+@keyframes rt-tag-1 {
+  0%, 18% { opacity: 0; }
+  20%, 40% { opacity: 1; }
+  43%, 100% { opacity: 0; }
+}
+
+@keyframes rt-tag-2 {
+  0%, 49% { opacity: 0; }
+  50%, 57% { opacity: 1; }
+  59%, 100% { opacity: 0; }
+}
+
+@keyframes rt-tag-3 {
+  0%, 75% { opacity: 0; }
+  77%, 94% { opacity: 1; }
+  96%, 100% { opacity: 0; }
+}
+
+.rt-x {
+  fill: none;
+  stroke: var(--fg);
+  stroke-width: 2;
+}
+
+.rt-line-1 { animation: rt-line-1 var(--rt) linear infinite; }
+.rt-line-2 { animation: rt-line-2 var(--rt) linear infinite; }
+.rt-line-3 { animation: rt-line-3 var(--rt) linear infinite; }
+
+@keyframes rt-line-1 {
+  0%, 1% { fill: var(--text); }
+  2%, 41% { fill: var(--fg); font-weight: 600; }
+  42%, 100% { fill: var(--text); }
+}
+
+@keyframes rt-line-2 {
+  0%, 43% { fill: var(--text); }
+  44%, 57% { fill: var(--fg); font-weight: 600; }
+  58%, 100% { fill: var(--text); }
+}
+
+@keyframes rt-line-3 {
+  0%, 59% { fill: var(--text); }
+  60%, 94% { fill: var(--fg); font-weight: 600; }
+  95%, 100% { fill: var(--text); }
 }
 
 .f-flow {
@@ -755,25 +1051,32 @@ h1 {
   to { stroke-dashoffset: -12; }
 }
 
-/* Without motion, show every step at once. */
+/* Without motion, show the most telling moment of each story. */
 @media (prefers-reduced-motion: reduce) {
   .pz *,
-  .f-flow,
+  .rt *,
   .sbx-state::before {
     animation: none !important;
   }
   .pz-hold,
+  .pz-saved,
   .pz-bundle,
   .pz-token,
+  .pz-ask,
   .pz-done,
-  .pz-cursor-b {
+  .pz-cursor-b,
+  .rt-tag-3,
+  .rt-dot-3 {
     opacity: 1;
   }
   .pz-cursor-a {
-    transform: translateY(72px);
+    transform: translateY(66px);
   }
   .pz-page {
     fill: var(--fg);
+  }
+  .rt-dot-3 {
+    transform: translate(234px, 5px);
   }
 }
 
@@ -913,6 +1216,39 @@ h1 {
   border-bottom: 0;
 }
 
+/* Under the code block: setup guide link and the "works with" row */
+
+.more {
+  margin-top: 24px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.more a {
+  color: var(--fg);
+  text-decoration: underline;
+  text-decoration-color: var(--faint);
+  text-underline-offset: 3px;
+}
+
+.clients {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 20px 0 0;
+  border-top: var(--rule);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 26px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.clients::before {
+  content: "works with";
+  color: var(--dim);
+}
+
 /* Narrow screens */
 
 /* Once the frame touches the screen edges, the crosshairs would hang off it. */
@@ -935,8 +1271,11 @@ h1 {
     grid-template-columns: minmax(0, 1fr);
     gap: 36px;
   }
-  .pz {
-    grid-template-columns: minmax(0, 1fr);
+  .pz .pz-wide {
+    display: none;
+  }
+  .pz .pz-narrow {
+    display: block;
   }
   .sbx-canvas {
     height: 180px;

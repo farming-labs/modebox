@@ -159,17 +159,13 @@ export default function HomePage() {
 
         <section className="explain corners" aria-labelledby="pause-title">
           <Label n="01">pause</Label>
-          <h2 id="pause-title">How a pause works</h2>
-          <p className="section-copy">The run itself is saved. Nothing waits in memory, nothing re-runs.</p>
+          <h2 id="pause-title" className="fig-h2">How a pause works</h2>
           <FigPause />
         </section>
 
         <section className="explain corners" aria-labelledby="runtime-title">
           <Label n="02">inside</Label>
-          <h2 id="runtime-title">What runs where</h2>
-          <p className="section-copy">
-            QuickJS-ng in WebAssembly, with two ways out: <code>emit()</code> and a clock.
-          </p>
+          <h2 id="runtime-title" className="fig-h2">What runs where</h2>
           <FigRuntime />
         </section>
 
