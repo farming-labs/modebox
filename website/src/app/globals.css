@@ -491,9 +491,6 @@ h1 {
   stroke: #333;
 }
 
-.f-box-hi {
-  stroke: #5a5a5a;
-}
 
 .f-outer {
   fill: none;
@@ -501,10 +498,6 @@ h1 {
   stroke-dasharray: 4 4;
 }
 
-.f-sandbox {
-  fill: rgb(255 255 255 / 0.015);
-  stroke: #6e6e6e;
-}
 
 .f-rule {
   stroke: #2d2d2d;
@@ -536,9 +529,6 @@ h1 {
   stroke-dasharray: 3 3;
 }
 
-.f-arrow-hi {
-  stroke: var(--text);
-}
 
 .f-mono {
   font-family: var(--mono);
@@ -1088,13 +1078,7 @@ h1 {
   95%, 100% { fill: var(--text); }
 }
 
-.f-flow {
-  animation: f-flow 1.2s linear infinite;
-}
 
-@keyframes f-flow {
-  to { stroke-dashoffset: -12; }
-}
 
 /* Without motion, show the most telling moment of each story. */
 @media (prefers-reduced-motion: reduce) {
