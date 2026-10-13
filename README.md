@@ -31,7 +31,7 @@ When a call needs your approval, the whole VM is snapshotted into an encrypted t
 |---|---|---|---|---|---|---|
 | Status | prototype (v0.1) | released | experimental flag | experimental, off by default | released | released |
 | Agent code runs in | QuickJS on wasm (wasmtime) | QuickJS on wasm (Node workers) | interpreter for a JS subset | V8, separate process | — (no code mode) | V8 isolates |
-| Runs where | any host: Rust, Node, CLI, MCP | Node / Bun | inside opencode | inside Codex | — | Cloudflare Workers |
+| Runs where | any host: Rust, Node, Python, CLI, MCP | Node / Bun | inside opencode | inside Codex | — | Cloudflare Workers |
 | MCP tools as typed functions | ✅ | ⚠️ via AI SDK code mode | ✅ | ✅ | — | ✅ |
 | Shell from agent code | ✅ `sh()` | ❌ | ❌ | ✅ | — | ❌ |
 | Shell commands in an OS sandbox | ✅ Seatbelt / bubblewrap + seccomp | — | ❌ | ✅ Seatbelt / bubblewrap + seccomp | ✅ Seatbelt / bubblewrap | — |
@@ -81,6 +81,7 @@ Prebuilt CLI binaries for each platform, with SHA-256 checksums, are attached to
 
 ```bash
 cargo build --release -p modebox      # ./target/release/modebox
+pip install ./crates/modebox-python   # the Python API (Python 3.10+); not on PyPI yet
 ./scripts/build-guest.sh              # only if you change guest/: rebuilds the QuickJS wasm (needs wasi-sdk 24)
 ```
 
@@ -188,6 +189,28 @@ if (r.status === 'interrupted') {
 }
 ```
 
+### Python
+
+The same API in Python 3.10+, with `async def` or plain host functions. See [crates/modebox-python](crates/modebox-python/README.md) for how values map.
+
+```python
+import os
+
+import modebox
+
+result = await modebox.run(
+    "const d = await tools.double(21); console.log(d); d",
+    host_functions={"tools": {"double": lambda x: x * 2}},
+)
+print(result.value, result.logs, result.stats)
+
+runner = modebox.Runner(continuation_secret=os.environ["SECRET"])
+r = await runner.run(source, host_functions={"bank": {"send": modebox.require_approval(send)}})
+if r.status == "interrupted":
+    await runner.run(host_functions=host_functions, continuation=r.continuation,
+                     resolutions=[modebox.approve(r.interruptions[0].id)])
+```
+
 ## Files: any storage as one object store
 
 `fs.*` gives sandboxed code one object-store API over **mounts**. A mount can be a local folder, memory, S3 / R2 / MinIO, GCS, Azure, HTTP, or your own backend implementing the six-method `Store` trait. Each mount is `read-only`, `staged` (writes wait for an approved commit) or `direct`. The full contract, the conformance suite, and a proposed out-of-process driver protocol are in [docs/storage.md](docs/storage.md).
@@ -253,6 +276,7 @@ guest/                 QuickJS guest (wasm32-unknown-unknown): event loop, codec
 crates/modebox-core    engine, run loop, snapshots, sessions, tools, TS, d.ts, shell
 crates/modebox-cli     the `modebox` crate and binary: run / resume / inspect / sh / types / mcp
 crates/modebox-node    napi-rs binding; packages/modebox is the JS API
+crates/modebox-python  PyO3 binding; python/modebox is the Python API
 bench/                 compare.mjs (Run vs modebox), results
 tests/fixtures         notes-mcp.mjs (downstream MCP server), drive-mcp.mjs (harness simulator)
 ```
@@ -260,14 +284,16 @@ tests/fixtures         notes-mcp.mjs (downstream MCP server), drive-mcp.mjs (har
 ```bash
 cargo test --release --workspace                  # release: some tests assert timings
 cargo clippy --workspace --all-targets -- -D warnings
-cargo build --release -p modebox -p modebox-node
+cargo build --release -p modebox -p modebox-node -p modebox-python
 cp target/release/libmodebox_node.dylib packages/modebox/modebox.node   # .so on Linux
 (cd packages/modebox && npm test)
+cp target/release/lib_native.dylib crates/modebox-python/python/modebox/_native.abi3.so   # .so on Linux
+(cd crates/modebox-python && PYTHONPATH=python python3 -m unittest discover -s tests)
 node tests/fixtures/drive-mcp.mjs legacy|elicit|mrtr|deny
 node bench/compare.mjs run && node bench/compare.mjs modebox
 ```
 
-CI (`.github/workflows/ci.yml`) runs these on Linux and macOS, checks the workspace builds on Rust 1.96 (the minimum), fails on RustSec advisories against any dependency, and rebuilds the guest to confirm the committed wasm matches byte for byte.
+CI (`.github/workflows/ci.yml`) runs these on Linux and macOS (the Python tests on Python 3.10, the oldest supported), checks the workspace builds on Rust 1.96 (the minimum), fails on RustSec advisories against any dependency, and rebuilds the guest to confirm the committed wasm matches byte for byte.
 
 ## License
 
