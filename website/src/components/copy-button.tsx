@@ -16,8 +16,13 @@ export function CopyButton({ text }: { text: string }) {
   }
 
   return (
-    <button type="button" className="copy" onClick={copy} aria-label={`Copy: ${text}`}>
-      {copied ? "Copied" : "Copy"}
-    </button>
+    <>
+      <button type="button" className="copy" onClick={copy}>
+        {copied ? "Copied" : "Copy"}
+      </button>
+      <span className="sr-only" aria-live="polite">
+        {copied ? "Copied" : ""}
+      </span>
+    </>
   );
 }

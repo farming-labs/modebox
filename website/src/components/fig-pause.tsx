@@ -114,7 +114,7 @@ function Locks({ head }: { head: string }) {
           mb1.q8Zt3fX0kR…
         </text>
         <text className="f-mono f-dim" x="208" y="97">
-          ~17 KB · works once
+          ~17 KB in our benchmark
         </text>
       </g>
       {[
@@ -129,7 +129,7 @@ function Locks({ head }: { head: string }) {
           </text>
         </g>
       ))}
-      <text className="f-mono f-faint" x="16" y="186">
+      <text className="f-mono f-dim" x="16" y="186">
         zstd · XChaCha20-Poly1305
       </text>
     </>
@@ -155,7 +155,7 @@ function Continues() {
       <text className="f-mono f-faint" x="16" y="124">
         1–3
       </text>
-      <text className="f-mono f-faint pz-struck" x="48" y="124">
+      <text className="f-mono f-dim" x="48" y="124">
         already done · not run again
       </text>
       <line className="pz-strike" x1="48" x2="250" y1="120" y2="120" />

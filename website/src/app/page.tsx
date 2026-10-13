@@ -3,7 +3,7 @@ import { FigPause } from "../components/fig-pause";
 import { FigRuntime } from "../components/fig-runtime";
 import { InstallSwitch } from "../components/install-switch";
 import { MemoryField } from "../components/memory-field";
-import { SiteFooter, SiteHeader } from "../components/site-chrome";
+import { REPO, SiteFooter, SiteHeader } from "../components/site-chrome";
 import HIGHLIGHTED from "../content/highlighted.json";
 import { SAMPLES, type SampleId } from "../content/samples";
 
@@ -13,9 +13,9 @@ const GUIDE = "/setup";
 const MAP = [
   { addr: "0x0000", segment: "engine", what: "QuickJS-ng in WebAssembly. Booted once, copied per run.", cost: "~0.1 ms" },
   { addr: "0x4000", segment: "boundary", what: "Only the tools you hand it. MCP servers become typed functions.", cost: "2 imports" },
-  { addr: "0x8000", segment: "pause", what: "Seals the run into a token. Resume anywhere; nothing re-runs.", cost: "~17 KB" },
+  { addr: "0x8000", segment: "pause", what: "Seals the run into a token, ~17 KB in our benchmark. Resume anywhere; nothing re-runs.", cost: "single-use" },
   { addr: "0xC000", segment: "files", what: "One API over local, S3, R2, GCS and Azure. Writes wait for you.", cost: "staged" },
-  { addr: "0x10000", segment: "shell", what: "sh() under Seatbelt or bubblewrap + seccomp, listed hosts only.", cost: "per host" },
+  { addr: "0x10000", segment: "shell", what: "sh() under Seatbelt or bubblewrap + seccomp. Network off, or listed hosts only.", cost: "per host" },
 ];
 
 const SOURCES: Omit<CodeTab, "html">[] = [
@@ -52,7 +52,7 @@ const SOURCES: Omit<CodeTab, "html">[] = [
 
 const TABS: CodeTab[] = SOURCES.map((tab) => ({ ...tab, html: HIGHLIGHTED[tab.id as SampleId] }));
 
-const CLIENTS = ["Claude Code", "opencode", "Codex", "Cursor", "Node", "Python", "Rust"];
+const CLIENTS = ["Claude Code", "opencode", "Codex", "Cursor", "T3 Code", "Node", "Python", "Rust"];
 
 function Label({ n, children }: { n: string; children: string }) {
   return (
@@ -73,13 +73,19 @@ export default function HomePage() {
       <main>
         <section className="hero corners">
           <div className="hero-copy">
-            <p className="eyebrow">v0.1 · MIT · open source</p>
+            <p className="eyebrow">v0.1 prototype · MIT · open source</p>
             <h1>Code mode, sandboxed.</h1>
             <p className="lede">
-              Your agent writes one script that calls your tools. modebox runs it in about 0.1 ms,
-              and pauses it mid-run when a call needs you.
+              Code mode means your agent writes one script that calls your tools. modebox runs that
+              script in a WebAssembly sandbox and pauses it mid-run when a call needs you. A fresh
+              sandbox starts in{" "}
+              <a className="inline" href={`${REPO}#benchmarks`}>
+                about 0.1 ms
+              </a>
+              .
             </p>
             <InstallSwitch />
+            <p className="platforms">macOS and Linux · Windows isn't supported yet</p>
           </div>
           <MemoryField />
         </section>

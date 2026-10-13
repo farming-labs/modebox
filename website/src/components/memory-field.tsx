@@ -32,6 +32,15 @@ export function MemoryField() {
   const [line, setLine] = useState(0);
   const [stats, setStats] = useState({ changed: 0, total: 0 });
   const [token, setToken] = useState("mb1.…");
+  // With reduced motion the window holds still on the paused run, and only
+  // moves when you press its button.
+  const [reduced, setReduced] = useState(false);
+  // Timers and drawing stop while the window is off screen or the tab is hidden.
+  const [visible, setVisible] = useState(true);
+  // The status line is only announced once you've used the button.
+  const [touched, setTouched] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const redraw = useRef(() => {});
   const approved = useRef(false);
 
   // Mutable state the animation loop reads without re-rendering.
@@ -49,33 +58,33 @@ export function MemoryField() {
   // pauses the run until it's approved.
   useEffect(() => {
     if (phase !== "running") return;
+    if (reduced) {
+      setLine(SCRIPT.length - 1);
+      setPhase("done");
+      return;
+    }
+    if (!visible) return;
     const id = setTimeout(() => {
       if (line === APPROVAL_LINE && !approved.current) freeze("awaiting");
       else if (line === SCRIPT.length - 1) setPhase("done");
       else setLine(line + 1);
     }, 900);
     return () => clearTimeout(id);
-  }, [phase, line]);
+  }, [phase, line, reduced, visible]);
 
   // After the script returns, start a fresh run.
   useEffect(() => {
-    if (phase !== "done") return;
-    const id = setTimeout(() => {
-      const s = sim.current;
-      s.dirty.fill(0);
-      approved.current = false;
-      setLine(0);
-      setPhase("running");
-    }, 2600);
+    if (phase !== "done" || reduced || !visible) return;
+    const id = setTimeout(restart, 2600);
     return () => clearTimeout(id);
-  }, [phase]);
+  }, [phase, reduced, visible]);
 
   // While awaiting approval, approve on its own after a while so the loop keeps going.
   useEffect(() => {
-    if (phase !== "awaiting") return;
+    if (phase !== "awaiting" || reduced || !visible) return;
     const id = setTimeout(() => resume(), 7000);
     return () => clearTimeout(id);
-  }, [phase]);
+  }, [phase, reduced, visible]);
 
   function countDirty() {
     const s = sim.current;
@@ -97,12 +106,31 @@ export function MemoryField() {
     setPhase("running");
   }
 
-  function onButton() {
-    if (phase === "running") freeze("paused");
-    else if (phase === "paused" || phase === "awaiting") resume();
+  function restart() {
+    sim.current.dirty.fill(0);
+    approved.current = false;
+    setLine(0);
+    setPhase("running");
   }
 
-  // Canvas: size to the container, then draw every frame.
+  // The still picture: paused at the call that needs approval.
+  function holdAtApproval() {
+    const s = sim.current;
+    for (let i = 0; i < s.dirty.length; i += 1) s.dirty[i] = Math.random() < 0.06 ? 1 : 0;
+    approved.current = false;
+    setLine(APPROVAL_LINE);
+    freeze("awaiting");
+    redraw.current();
+  }
+
+  function onButton() {
+    setTouched(true);
+    if (phase === "running") freeze("paused");
+    else if (phase === "paused" || phase === "awaiting") resume();
+    else if (reduced) holdAtApproval();
+  }
+
+  // Canvas: size to the container, then draw every frame while it is on screen.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -131,15 +159,10 @@ export function MemoryField() {
         s.heat = new Float32Array(cols * rows);
         s.dirty = new Uint8Array(cols * rows);
         s.last = Math.floor(Math.random() * cols * rows);
-        if (s.reduced) {
-          // A still picture of a paused run.
-          for (let i = 0; i < s.dirty.length; i += 1) if (Math.random() < 0.06) s.dirty[i] = 1;
-        }
+        if (s.reduced) holdAtApproval();
       }
+      if (!raf) draw();
     };
-    resize();
-    const ro = new ResizeObserver(resize);
-    ro.observe(canvas);
 
     let raf = 0;
     const draw = () => {
@@ -171,12 +194,41 @@ export function MemoryField() {
         }
         ctx.fillRect(x, y, CELL, CELL);
       }
-      raf = requestAnimationFrame(draw);
     };
-    raf = requestAnimationFrame(draw);
+    const loop = () => {
+      draw();
+      raf = requestAnimationFrame(loop);
+    };
+
+    redraw.current = draw;
+    if (s.reduced) setReduced(true);
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(canvas);
+
+    let onScreen = true;
+    const update = () => {
+      const show = onScreen && !document.hidden;
+      setVisible(show);
+      if (show && !s.reduced && !raf) raf = requestAnimationFrame(loop);
+      if (!show && raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+    };
+    const io = new IntersectionObserver(([entry]) => {
+      onScreen = entry.isIntersecting;
+      update();
+    });
+    if (rootRef.current) io.observe(rootRef.current);
+    document.addEventListener("visibilitychange", update);
+    update();
+
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      io.disconnect();
+      document.removeEventListener("visibilitychange", update);
     };
   }, []);
 
@@ -193,7 +245,7 @@ export function MemoryField() {
           : "booted from snapshot · ~0.1 ms";
 
   return (
-    <div className={`sbx${frozen ? " is-frozen" : ""}`}>
+    <div ref={rootRef} className={`sbx${frozen ? " is-frozen" : ""}`}>
       <div className="sbx-bar">
         <span className="sbx-id">sandbox · mb_7f3a2c</span>
         <span className="sbx-state">{state}</span>
@@ -201,9 +253,21 @@ export function MemoryField() {
           type="button"
           className="sbx-button"
           onClick={onButton}
-          disabled={phase === "done"}
+          disabled={phase === "done" && !reduced}
         >
-          {phase === "running" ? "❚❚  Pause" : phase === "awaiting" ? "Approve  ▶" : phase === "paused" ? "Resume  ▶" : "Done"}
+          {phase === "running" ? (
+            <>
+              <span aria-hidden="true">❚❚</span>
+              {"  Pause"}
+            </>
+          ) : phase === "done" ? (
+            reduced ? "Run again" : "Done"
+          ) : (
+            <>
+              {phase === "awaiting" ? "Approve  " : "Resume  "}
+              <span aria-hidden="true">▶</span>
+            </>
+          )}
         </button>
       </div>
       <div className="sbx-line" aria-hidden="true">
@@ -217,7 +281,7 @@ export function MemoryField() {
         aria-label="The sandbox's memory, one square per 4 KiB page. Pages flicker as the script writes to them; when the run pauses, the changed pages turn white."
       />
       <div className="sbx-foot">
-        <span aria-live="polite">{status}</span>
+        <span aria-live={touched ? "polite" : "off"}>{status}</span>
         {frozen ? (
           <span className="sbx-token">
             {stats.changed.toLocaleString("en-US")} pages → <code>{token}</code>

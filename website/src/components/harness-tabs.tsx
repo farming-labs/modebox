@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Rich } from "./code-block";
 import { CopyButton } from "./copy-button";
 import { ShellCode } from "./shell-code";
+import { onTabKeys } from "./tab-keys";
 
 export interface Harness {
   id: string;
@@ -18,11 +19,16 @@ export interface Harness {
 
 export function HarnessTabs({ items }: { items: Harness[] }) {
   const [active, setActive] = useState(items[0].id);
-  const item = items.find((h) => h.id === active) ?? items[0];
+  const ids = items.map((h) => h.id);
 
   return (
     <div className="tabs">
-      <div className="tab-list" role="tablist" aria-label="Agent">
+      <div
+        className="tab-list"
+        role="tablist"
+        aria-label="Agent"
+        onKeyDown={(e) => onTabKeys(e, ids, active, setActive)}
+      >
         {items.map((h) => (
           <button
             key={h.id}
@@ -30,7 +36,8 @@ export function HarnessTabs({ items }: { items: Harness[] }) {
             role="tab"
             id={`harness-${h.id}-tab`}
             aria-selected={h.id === active}
-            aria-controls="harness-panel"
+            aria-controls={`harness-${h.id}-panel`}
+            tabIndex={h.id === active ? 0 : -1}
             className="tab"
             onClick={() => setActive(h.id)}
           >
@@ -38,30 +45,39 @@ export function HarnessTabs({ items }: { items: Harness[] }) {
           </button>
         ))}
       </div>
-      <div className="tab-panel" role="tabpanel" id="harness-panel" aria-labelledby={`harness-${item.id}-tab`}>
-        {item.file && item.code && item.html ? (
-          <>
-            <div className="code-head">
-              <span>{item.file}</span>
-              <CopyButton text={item.code} />
+      {items.map((item) => (
+        <div
+          key={item.id}
+          className="tab-panel"
+          role="tabpanel"
+          id={`harness-${item.id}-panel`}
+          aria-labelledby={`harness-${item.id}-tab`}
+          hidden={item.id !== active}
+        >
+          {item.file && item.code && item.html ? (
+            <>
+              <div className="code-head">
+                <span>{item.file}</span>
+                <CopyButton text={item.code} />
+              </div>
+              <div className="code-body" dangerouslySetInnerHTML={{ __html: item.html }} />
+            </>
+          ) : null}
+          {item.cmd ? (
+            <div className={item.file ? "code-install code-then" : "code-install"}>
+              <ShellCode cmd={item.cmd} />
+              <CopyButton text={item.cmd} />
             </div>
-            <div className="code-body" dangerouslySetInnerHTML={{ __html: item.html }} />
-          </>
-        ) : null}
-        {item.cmd ? (
-          <div className={item.file ? "code-install code-then" : "code-install"}>
-            <ShellCode cmd={item.cmd} />
-            <CopyButton text={item.cmd} />
-          </div>
-        ) : null}
-        <ul className="notes">
-          {item.notes.map((n, i) => (
-            <li key={i}>
-              <Rich text={n} />
-            </li>
-          ))}
-        </ul>
-      </div>
+          ) : null}
+          <ul className="notes">
+            {item.notes.map((n, i) => (
+              <li key={i}>
+                <Rich text={n} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
     </div>
   );
 }
