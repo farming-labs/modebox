@@ -35,10 +35,7 @@ export function SiteHeader({ current }: { current?: "setup" }) {
 export function SiteFooter() {
   return (
     <footer className="bottom">
-      <span>
-        end of snapshot · <a href={`${REPO}/blob/main/LICENSE`}>MIT</a> ·{" "}
-        <a href="https://github.com/farming-labs">farming-labs</a>
-      </span>
+      <a href="https://farming-labs.dev">farming-labs</a>
       <span className="bottom-links">
         <a href={`${REPO}#benchmarks`}>Benchmarks</a> ·{" "}
         <a href={`${REPO}/blob/main/SECURITY.md`}>Security</a> · Built with{" "}
