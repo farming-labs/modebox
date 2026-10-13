@@ -1,0 +1,1 @@
+modebox: Code mode, sandboxed. A paused sandbox window shows the memory pages a run changed, and a badge that says it needs your OK.

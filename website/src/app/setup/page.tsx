@@ -9,9 +9,14 @@ import { SAMPLES, type SampleId } from "../../content/samples";
 
 // The same content as docs/integrations.md in the repo, laid out for the site.
 
+const TITLE = "Setup guide · modebox";
+const DESCRIPTION = "Connect modebox to opencode, Claude Code, Codex, Cursor, T3 Code or any MCP client.";
+
 export const metadata: Metadata = {
-  title: "Setup guide · modebox",
-  description: "Connect modebox to opencode, Claude Code, Codex, Cursor, T3 Code or any MCP client.",
+  title: TITLE,
+  description: DESCRIPTION,
+  openGraph: { url: "/setup", title: TITLE, description: DESCRIPTION },
+  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION },
 };
 
 const GUIDE_SOURCE = `${REPO}/blob/main/docs/integrations.md`;
@@ -182,6 +187,11 @@ export default function SetupPage() {
           <Cmd cmd="cargo install modebox" />
           <p className="section-copy guide-gap">Or download it from the latest release:</p>
           <CodeBlock {...RELEASE} />
+          <p className="section-copy guide-gap">
+            On another machine, swap <code>aarch64-apple-darwin</code> for{" "}
+            <code>x86_64-apple-darwin</code> (Intel Mac), <code>x86_64-unknown-linux-gnu</code> or{" "}
+            <code>aarch64-unknown-linux-gnu</code>.
+          </p>
           <p className="callout">
             <code>npm install modebox</code> and <code>pip install modebox</code> install the library
             for your own code. They don't include the <code>modebox</code> command.

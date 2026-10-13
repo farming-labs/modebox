@@ -35,9 +35,14 @@ export function SiteHeader({ current }: { current?: "setup" }) {
 export function SiteFooter() {
   return (
     <footer className="bottom">
-      <span>end of snapshot · MIT · farming-labs</span>
+      <span>
+        end of snapshot · <a href={`${REPO}/blob/main/LICENSE`}>MIT</a> ·{" "}
+        <a href="https://github.com/farming-labs">farming-labs</a>
+      </span>
       <span className="bottom-links">
-        Built with <a href="https://farmjs.dev">Farm.js</a> ·{" "}
+        <a href={`${REPO}#benchmarks`}>Benchmarks</a> ·{" "}
+        <a href={`${REPO}/blob/main/SECURITY.md`}>Security</a> · Built with{" "}
+        <a href="https://farmjs.dev">Farm.js</a> ·{" "}
         <a href={REPO} className="gh">
           <GitHubIcon size={12} />
           GitHub

@@ -3,24 +3,26 @@ import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "./globals.css";
 
+const TITLE = "modebox: code mode, sandboxed";
+const DESCRIPTION =
+  "Run the code your AI agent writes in a WebAssembly sandbox that pauses for your approval and picks up later. Nothing runs twice.";
+
 export const metadata: Metadata = {
-  title: "modebox: code mode with a pause button",
-  description:
-    "A WebAssembly sandbox for the code AI agents write. Starts in about 0.1 ms, calls only the tools you hand it, and can pause mid-run for your approval.",
+  metadataBase: "https://modebox.farming-labs.dev",
+  title: TITLE,
+  description: DESCRIPTION,
   icons: {
     icon: [{ url: "/favicon.svg", type: "image/svg+xml", sizes: "any" }],
+    shortcut: "/favicon.ico",
+    apple: [{ url: "/apple-touch-icon.png", type: "image/png", sizes: "180x180" }],
   },
+  // The image comes from src/app/opengraph-image.png.
+  openGraph: { siteName: "modebox", type: "website", url: "/", title: TITLE, description: DESCRIPTION },
+  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION },
+  other: { "theme-color": "#151515" },
 };
 
+// Farm renders the document shell; the root layout only wraps the page.
 export default function RootLayout({ children }: LayoutProps) {
-  return (
-    <html lang="en">
-      <head>
-        <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="theme-color" content="#151515" />
-      </head>
-      <body>{children}</body>
-    </html>
-  );
+  return children;
 }

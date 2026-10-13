@@ -1,0 +1,74 @@
+<!doctype html>
+<!-- The 1200×630 social preview image. Rendered to src/app/opengraph-image.png
+     by scripts/images/render.sh. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: Geist; src: url("../../node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; }
+  @font-face { font-family: GeistMono; src: url("../../node_modules/@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1200px; height: 630px; background: #151515; color: #ededed; overflow: hidden; }
+  body { font-family: Geist, sans-serif; -webkit-font-smoothing: antialiased; position: relative; }
+  .frame { position: absolute; inset: 0 64px; border-left: 1px dashed #2d2d2d; border-right: 1px dashed #2d2d2d; }
+  .rule { position: absolute; left: 0; right: 0; border-top: 1px dashed #353535; }
+  .top { position: absolute; top: 0; left: 64px; right: 64px; height: 76px; display: flex; align-items: center; justify-content: space-between; padding: 0 40px; }
+  .brand { display: flex; align-items: center; gap: 14px; font-size: 26px; font-weight: 560; }
+  .url { font-family: GeistMono; font-size: 19px; color: #8a8a8a; }
+  .copy { position: absolute; left: 104px; top: 150px; width: 560px; }
+  .eyebrow { font-family: GeistMono; font-size: 17px; color: #8a8a8a; letter-spacing: 0.02em; }
+  h1 { margin-top: 20px; font-size: 66px; font-weight: 500; line-height: 1.06; letter-spacing: -0.025em; }
+  p { margin-top: 24px; font-size: 25px; line-height: 1.45; color: #a3a3a3; }
+  .install { position: absolute; left: 104px; bottom: 56px; font-family: GeistMono; font-size: 19px; color: #8a8a8a; }
+  .install b { color: #ededed; font-weight: 400; }
+  .win { position: absolute; right: 104px; top: 150px; width: 400px; border: 1px solid #2a2a2a; border-radius: 6px; background: #101010; overflow: hidden; }
+  .bar { display: flex; align-items: center; justify-content: space-between; height: 52px; padding: 0 12px 0 16px; border-bottom: 1px dashed #2d2d2d; font-family: GeistMono; font-size: 15px; color: #8a8a8a; }
+  .state { display: flex; align-items: center; gap: 8px; color: #ededed; }
+  .state::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #ededed; }
+  .line { height: 46px; display: flex; align-items: center; padding: 0 16px; border-bottom: 1px dashed #2d2d2d; font-family: GeistMono; font-size: 15px; }
+  .line code { color: #ededed; outline: 1px dashed rgba(255,255,255,.45); outline-offset: 4px; font-family: GeistMono; }
+  .grid { display: grid; grid-template-columns: repeat(16, 1fr); gap: 5px; padding: 18px 16px; }
+  .grid i { aspect-ratio: 1; background: #262626; border-radius: 2px; }
+  .grid i.on { background: #ededed; }
+  .foot { display: flex; justify-content: space-between; align-items: center; height: 48px; padding: 0 16px; border-top: 1px dashed #2d2d2d; font-family: GeistMono; font-size: 15px; color: #a3a3a3; }
+  .badge { background: #ededed; color: #000; border-radius: 4px; padding: 6px 10px; font-family: GeistMono; font-size: 14px; }
+</style>
+</head>
+<body>
+  <div class="frame"></div>
+  <div class="rule" style="top: 76px"></div>
+  <div class="rule" style="bottom: 0"></div>
+  <div class="top">
+    <div class="brand">
+      <svg width="30" height="30" viewBox="0 0 18 18"><rect x="0.5" y="0.5" width="17" height="17" rx="3" fill="none" stroke="#ededed"/><rect x="6" y="5" width="2" height="8" fill="#ededed"/><rect x="10" y="5" width="2" height="8" fill="#ededed"/></svg>
+      modebox
+    </div>
+    <div class="url">modebox.farming-labs.dev</div>
+  </div>
+
+  <div class="copy">
+    <div class="eyebrow">v0.1 prototype · MIT · open source</div>
+    <h1>Code mode, sandboxed.</h1>
+    <p>Run the code your AI agent writes in a WebAssembly sandbox that pauses for your approval and picks up later. Nothing runs twice.</p>
+  </div>
+
+  <div class="install"><b>npm</b> install modebox · <b>pip</b> install modebox · <b>cargo</b> install modebox</div>
+
+  <div class="win">
+    <div class="bar"><span>sandbox · mb_7f3a2c</span><span class="state">paused</span></div>
+    <div class="line"><code>await payments.refund(c.id, amt);</code></div>
+    <div class="grid" id="grid"></div>
+    <div class="foot"><span>14 pages → mb1.q8Zt…</span><span class="badge">❚❚ needs your OK</span></div>
+  </div>
+
+  <script>
+    const on = new Set([3, 4, 19, 20, 37, 45, 52, 66, 67, 81, 90, 101, 116, 117]);
+    const grid = document.getElementById("grid");
+    for (let i = 0; i < 128; i++) {
+      const cell = document.createElement("i");
+      if (on.has(i)) cell.className = "on";
+      grid.appendChild(cell);
+    }
+  </script>
+</body>
+</html>

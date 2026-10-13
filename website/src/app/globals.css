@@ -3,10 +3,10 @@
   --recess: #101010;
   --raised: #1d1d1d;
   --fg: #ededed;
-  --text: #b7b7b7;
-  --muted: #929292;
-  --dim: #6e6e6e;
-  --faint: #3a3a3a;
+  --text: #c2c2c2;
+  --muted: #a3a3a3;
+  --dim: #8a8a8a;
+  --faint: #4a4a4a;
   --line: #2a2a2a;
   --rule: 1px dashed #353535;
   --rule-soft: 1px dashed #2d2d2d;
@@ -302,6 +302,7 @@ h1 {
 .section-copy code {
   font-size: 13px;
   color: var(--fg);
+  overflow-wrap: anywhere;
 }
 
 /* The live sandbox window */
@@ -474,8 +475,12 @@ h1 {
   height: auto;
 }
 
-.rt svg {
+.rt .rt-wide {
   min-width: 760px;
+}
+
+.rt .rt-narrow {
+  display: none;
 }
 
 .fig-cap {
@@ -563,7 +568,7 @@ h1 {
 }
 
 .f-faint {
-  fill: #454545;
+  fill: #5a5a5a;
 }
 
 /* Shared figure pieces */
@@ -1322,6 +1327,11 @@ h1 {
 }
 
 .block > :last-child,
+.tab-panel[hidden],
+.switch-cmd[hidden] {
+  display: none;
+}
+
 .tab-panel > :last-child {
   border-bottom: 0;
 }
@@ -1360,6 +1370,11 @@ h1 {
   line-height: 1.6;
   color: var(--muted);
   border-top: var(--rule-soft);
+}
+
+.notes li {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .notes li::marker {
@@ -1425,6 +1440,44 @@ h1 {
   color: var(--text);
 }
 
+/* Hero details */
+
+.platforms {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--dim);
+  margin-top: -6px;
+}
+
+a.inline {
+  color: var(--fg);
+  text-decoration: underline;
+  text-decoration-color: var(--faint);
+  text-underline-offset: 3px;
+}
+
+a.inline:hover {
+  text-decoration-color: var(--muted);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Keyboard focus inside tab bars, which clip their overflow. */
+.tab:focus-visible,
+.switch-tab:focus-visible {
+  outline-offset: -3px;
+}
+
 /* Narrow screens */
 
 /* Once the frame touches the screen edges, the crosshairs would hang off it. */
@@ -1447,6 +1500,12 @@ h1 {
     grid-template-columns: minmax(0, 1fr);
     gap: 36px;
   }
+  .tab-list {
+    flex-wrap: wrap;
+  }
+  .tab {
+    border-bottom: var(--rule-soft);
+  }
   .kv > div,
   .kv-wide > div {
     grid-template-columns: minmax(0, 1fr);
@@ -1456,6 +1515,12 @@ h1 {
     display: none;
   }
   .pz .pz-narrow {
+    display: block;
+  }
+  .rt .rt-wide {
+    display: none;
+  }
+  .rt .rt-narrow {
     display: block;
   }
   .sbx-canvas {
@@ -1487,5 +1552,3 @@ h1 {
   }
 }
 
-@media (max-width: 480px) {
-}

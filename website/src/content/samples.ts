@@ -37,22 +37,26 @@ if (r.status === "interrupted") {
   },
   python: {
     lang: "py",
-    code: `import os
+    code: `import asyncio
+import os
 import modebox
 
 runner = modebox.Runner(continuation_secret=os.environ["SECRET"])
 host_functions = {"payments": {"refund": modebox.require_approval(refund)}}
 
-# \`script\` is the code your agent wrote.
-r = await runner.run(script, host_functions=host_functions)
+async def main():
+    # \`script\` is the code your agent wrote.
+    r = await runner.run(script, host_functions=host_functions)
 
-if r.status == "interrupted":
-    # Later, even in another process:
-    await runner.run(
-        host_functions=host_functions,
-        continuation=r.continuation,
-        resolutions=[modebox.approve(r.interruptions[0].id)],
-    )`,
+    if r.status == "interrupted":
+        # Later, even in another process:
+        await runner.run(
+            host_functions=host_functions,
+            continuation=r.continuation,
+            resolutions=[modebox.approve(r.interruptions[0].id)],
+        )
+
+asyncio.run(main())`,
   },
   rust: {
     lang: "rs",
