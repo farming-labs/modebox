@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/farming-labs/modebox/actions/workflows/ci.yml/badge.svg)](https://github.com/farming-labs/modebox/actions/workflows/ci.yml)
 
-Run untrusted, agent-written JavaScript/TypeScript in a WebAssembly sandbox whose only authority is the functions you hand it, and plug it into any agent harness as **code mode** over MCP.
+Run untrusted, agent-written JavaScript/TypeScript in a WebAssembly sandbox whose only authority is the functions you hand it, and plug it into any agent harness as **code mode** over MCP ([setup guide](docs/integrations.md)).
 
 When a call needs your approval, the whole VM is snapshotted into an encrypted token. The run can resume minutes or days later, even in another process, and nothing re-runs.
 
@@ -231,6 +231,8 @@ await fs.commit({ message: 'rename oldApi' });                            // pau
 - **Commit.** Commits use conditional writes (`IfMatch` / `IfNotExists`). Anything that changed in its store since the code first read it is reported as a conflict instead of being overwritten.
 
 ## Integrations
+
+[docs/integrations.md](docs/integrations.md) is the step-by-step setup for opencode, Claude Code, Codex, Cursor, T3 Code and any other MCP client: installing the CLI, writing `modebox.json`, each harness's config, and how approvals reach you. The ready-made files it uses are in `integrations/`.
 
 **opencode**, in `integrations/opencode/`:
 - `opencode.json` adds the MCP server. MCP requests time out after 5 s by default, so the snippet raises the timeout. It also sets `"modebox_approve": "ask"`, because opencode allows every tool by default. That prompt is what makes it safe to turn on the `approve` tool with `"mcp": { "approveTool": true }` in `modebox.json`.
