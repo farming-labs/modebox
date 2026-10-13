@@ -2,9 +2,8 @@ import { CodeTabs, type CodeTab } from "../components/code-tabs";
 import { FigPause } from "../components/fig-pause";
 import { FigRuntime } from "../components/fig-runtime";
 import { InstallSwitch } from "../components/install-switch";
-import { GitHubIcon } from "../components/github-icon";
 import { MemoryField } from "../components/memory-field";
-import { REPO, SiteFooter, SiteHeader } from "../components/site-chrome";
+import { SiteFooter, SiteHeader } from "../components/site-chrome";
 import { highlight, type Lang } from "../lib/highlight";
 
 const GUIDE = "/setup";
@@ -131,13 +130,6 @@ export default function HomePage() {
               and pauses it mid-run when a call needs you.
             </p>
             <InstallSwitch />
-            <p className="hero-links">
-              <a href={GUIDE}>Setup guide →</a>
-              <a href={REPO} className="gh">
-                <GitHubIcon size={13} />
-                GitHub →
-              </a>
-            </p>
           </div>
           <MemoryField />
         </section>

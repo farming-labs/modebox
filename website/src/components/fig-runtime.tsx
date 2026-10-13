@@ -1,5 +1,6 @@
 // "What runs where": the agent's code sits in a sealed box with one door.
-// Each request is a pulse running along a wire (rt-* keyframes in globals.css, 10 s):
+// The wires themselves animate: a route's dashes brighten and march in the
+// direction of travel (rt-* keyframes in globals.css, 10 s):
 //   0–41%  db.users()        → door → allowed → database, and the answer runs back
 //   44–58% fetch("evil.com") → hits the wall → blocked
 //   60–94% payments.refund() → door → stops at the check: asks you
@@ -31,7 +32,7 @@ export function FigRuntime() {
         aria-label="The agent's code runs inside a sealed box in your app. Its only way out is one door, where modebox checks each request. A database read is allowed and the answer comes back. A request to the internet hits the wall and is blocked. A refund stops at the door and asks you first."
       >
         <defs>
-          <marker id="rt-head" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <marker id="rt-head" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto">
             <path d="M2 1L8 5L2 9" fill="none" stroke="#7a7a7a" strokeWidth="1.4" />
           </marker>
         </defs>
@@ -66,8 +67,9 @@ export function FigRuntime() {
           WebAssembly
         </text>
 
-        {/* The wire from the script to the door */}
-        <path className="rt-wire" d="M352 181 H430 V206 H520" />
+        {/* Routes out of the script: through the door to the check, and up into the wall */}
+        <path className="rt-wire rt-w1" d="M352 181 H430 V206 H582" markerEnd="url(#rt-head)" />
+        <path className="rt-wire rt-w5" d="M330 120 V78" />
 
         {/* The agent's script */}
         <rect className="pz-card" x="62.5" y="120.5" width="290" height="102" />
@@ -101,19 +103,10 @@ export function FigRuntime() {
           />
         ))}
 
-        {/* Pulses: one per request, plus the answer coming back. They're drawn
-            before the check, so a pulse passing through it disappears inside. */}
-        <path className="rt-pulse rt-p1" pathLength="100" d="M352 161 H430 V206 H586" />
-        <path className="rt-pulse rt-p1b" pathLength="100" d="M737 206 H766 V125 H800" />
-        <path className="rt-pulse rt-pulse-back rt-p1c" pathLength="100" d="M800 125 H766 V206 H430 V161 H352" />
-        <path className="rt-pulse rt-p2" pathLength="100" d="M330 120 V76" />
-        <path className="rt-pulse rt-p3" pathLength="100" d="M352 201 H430 V206 H586" />
-
         {/* The door and the check */}
         <text className="f-mono f-hi" x="530" y="172">
           the only door
         </text>
-        <path className="rt-wire" d="M520 206 H578" markerEnd="url(#rt-head)" />
         <rect className="rt-gate" x="586.5" y="178.5" width="150" height="56" />
         <text className="f-sans f-title" x="600" y="202">
           modebox checks
@@ -134,7 +127,7 @@ export function FigRuntime() {
             </text>
           </g>
         ))}
-        <path className="rt-wire" d="M737 206 H766 V125 H796" markerEnd="url(#rt-head)" />
+        <path className="rt-wire rt-w2" d="M737 206 H766 V125 H796" markerEnd="url(#rt-head)" />
         <path className="rt-wire" d="M737 206 H796" markerEnd="url(#rt-head)" />
         <path className="rt-wire" d="M737 206 H766 V285 H796" markerEnd="url(#rt-head)" />
 

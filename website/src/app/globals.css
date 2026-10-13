@@ -223,18 +223,6 @@ h1 {
   max-width: 44ch;
 }
 
-.hero-links {
-  display: flex;
-  gap: 20px;
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.hero-links a:hover {
-  color: var(--fg);
-}
-
 /* Install switcher: npm / pip / cargo */
 
 .switch {
@@ -936,64 +924,51 @@ h1 {
   96%, 100% { stroke: #4a4a4a; }
 }
 
-/* A request is a short bright pulse running along its wire. With
-   pathLength="100", a 14-unit dash travels from offset 14 (just before the
-   start) to -100 (just past the end), whatever the wire's real length. */
-.rt-pulse {
-  fill: none;
-  stroke: var(--fg);
-  stroke-width: 2.5;
-  stroke-linecap: round;
-  stroke-dasharray: 14 200;
-  stroke-dashoffset: 14;
-  opacity: 0;
+/* Requests move along the wires themselves: an active route's dashes
+   brighten and march in the direction of travel (forward: the offset falls;
+   the answer coming back: it rises). Every stop is a multiple of the 6-unit
+   dash period, so the loop restarts without a jump. */
+.rt-w1,
+.rt-w2,
+.rt-w5 {
   animation: var(--rt) linear infinite;
 }
 
-.rt-pulse-back {
-  stroke: var(--muted);
-  stroke-width: 2;
+.rt-w1 { animation-name: rt-w1; }
+.rt-w2 { animation-name: rt-w2; }
+.rt-w5 { animation-name: rt-w5; }
+
+@keyframes rt-w1 {
+  0% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: 0; }
+  2% { stroke: var(--fg); stroke-width: 1.5; stroke-dashoffset: 0; }
+  16% { stroke: var(--fg); stroke-width: 1.5; stroke-dashoffset: -84; }
+  17% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: -84; }
+  30% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: -84; }
+  31% { stroke: var(--muted); stroke-width: 1.5; stroke-dashoffset: -84; }
+  40% { stroke: var(--muted); stroke-width: 1.5; stroke-dashoffset: -36; }
+  41% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: -36; }
+  60% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: -36; }
+  61% { stroke: var(--fg); stroke-width: 1.5; stroke-dashoffset: -36; }
+  72% { stroke: var(--fg); stroke-width: 1.5; stroke-dashoffset: -108; }
+  73% { stroke: #8a8a8a; stroke-width: 1.5; stroke-dashoffset: -108; }
+  94% { stroke: #8a8a8a; stroke-width: 1.5; stroke-dashoffset: -108; }
+  96%, 100% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: -108; }
 }
 
-.rt-p1 { animation-name: rt-p1; }
-.rt-p1b { animation-name: rt-p1b; }
-.rt-p1c { animation-name: rt-p1c; }
-.rt-p2 { animation-name: rt-p2; }
-.rt-p3 { animation-name: rt-p3; }
-
-@keyframes rt-p1 {
-  0%, 2% { opacity: 0; stroke-dashoffset: 14; }
-  3% { opacity: 1; stroke-dashoffset: 14; }
-  15% { opacity: 1; stroke-dashoffset: -100; }
-  16%, 100% { opacity: 0; stroke-dashoffset: -100; }
+@keyframes rt-w2 {
+  0%, 19% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: 0; }
+  20% { stroke: var(--fg); stroke-width: 1.5; stroke-dashoffset: 0; }
+  27% { stroke: var(--fg); stroke-width: 1.5; stroke-dashoffset: -42; }
+  28% { stroke: var(--muted); stroke-width: 1.5; stroke-dashoffset: -42; }
+  33% { stroke: var(--muted); stroke-width: 1.5; stroke-dashoffset: -12; }
+  34%, 100% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: -12; }
 }
 
-@keyframes rt-p1b {
-  0%, 20% { opacity: 0; stroke-dashoffset: 14; }
-  21% { opacity: 1; stroke-dashoffset: 14; }
-  27% { opacity: 1; stroke-dashoffset: -100; }
-  28%, 100% { opacity: 0; stroke-dashoffset: -100; }
-}
-
-@keyframes rt-p1c {
-  0%, 29% { opacity: 0; stroke-dashoffset: 14; }
-  30% { opacity: 1; stroke-dashoffset: 14; }
-  40% { opacity: 1; stroke-dashoffset: -100; }
-  41%, 100% { opacity: 0; stroke-dashoffset: -100; }
-}
-
-@keyframes rt-p2 {
-  0%, 44% { opacity: 0; stroke-dashoffset: 14; }
-  45% { opacity: 1; stroke-dashoffset: 14; }
-  50% { opacity: 1; stroke-dashoffset: -86; }
-  51%, 100% { opacity: 0; stroke-dashoffset: -86; }
-}
-
-@keyframes rt-p3 {
-  0%, 60% { opacity: 0; stroke-dashoffset: 14; }
-  61% { opacity: 1; stroke-dashoffset: 14; }
-  71% { opacity: 1; stroke-dashoffset: -100; }
-  72%, 100% { opacity: 0; stroke-dashoffset: -100; }
+@keyframes rt-w5 {
+  0%, 44% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: 0; }
+  45% { stroke: var(--fg); stroke-width: 1.5; stroke-dashoffset: 0; }
+  51% { stroke: var(--fg); stroke-width: 1.5; stroke-dashoffset: -30; }
+  52%, 100% { stroke: #4a4a4a; stroke-width: 1; stroke-dashoffset: -30; }
 }
 
 /* The database lights up softly when the request arrives. */
