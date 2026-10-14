@@ -4,9 +4,16 @@ Notable changes to modebox. The format follows [Keep a Changelog](https://keepac
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-13
+
 ### Changed
 
 - **`sh()` is opt-in in the CLI and MCP server.** Without a `"shell"` key in `modebox.json`, sandboxed code has no `sh()`. Its default allow list includes file readers such as `cat`, `head` and `rg`, and the OS sandbox blocks reads only from credential folders. Reading files outside the project should be something a config asks for. `"shell": {}` turns it on with the same defaults as before, and `modebox sh` is unchanged.
+
+### Notes
+
+- The guest is unchanged, so continuation tokens and saved sessions from 0.1.1 resume in 0.1.2.
+- modebox has a website, [modebox.farming-labs.dev](https://modebox.farming-labs.dev). The README is shorter, and the details moved to `docs/`.
 
 ## [0.1.1] - 2026-10-12
 
