@@ -1,0 +1,17 @@
+# modebox
+
+> Code mode for AI agents, sandboxed. modebox runs the JavaScript or TypeScript an agent writes in a WebAssembly sandbox (QuickJS on wasmtime) whose only authority is the functions you hand it. When a call needs approval, the run is sealed into an encrypted token and resumes later, even in another process, without re-running anything. It works as an MCP server for any agent, or as a library from Node, Python and Rust. macOS and Linux; Windows isn't supported.
+
+Install: `cargo install modebox` (the CLI and MCP server), `npm install modebox` (Node API), `pip install modebox` (Python API).
+
+## Docs
+
+- [README](https://raw.githubusercontent.com/farming-labs/modebox/main/README.md): what it is, benchmarks, the Node, Python and Rust APIs, the security model and limitations
+- [Setup guide](https://raw.githubusercontent.com/farming-labs/modebox/main/docs/integrations.md): connect modebox to opencode, Claude Code, Codex, Cursor, T3 Code or any MCP client
+- [Security policy](https://raw.githubusercontent.com/farming-labs/modebox/main/SECURITY.md)
+- [Changelog](https://raw.githubusercontent.com/farming-labs/modebox/main/CHANGELOG.md)
+
+## Optional
+
+- [Source](https://github.com/farming-labs/modebox)
+- [Website](https://modebox.farming-labs.dev)
