@@ -19,6 +19,7 @@ pub struct Config {
     /// Downstream MCP servers whose tools become `server.tool()` functions.
     #[serde(default)]
     pub mcp_servers: BTreeMap<String, ServerConfig>,
+    /// `sh()` for sandboxed code. Absent: no `sh()`; `"shell": {}` turns it on.
     #[serde(default)]
     pub shell: ShellConfig,
     #[serde(default)]
@@ -147,10 +148,12 @@ fn default_allow() -> Vec<String> {
     .collect()
 }
 
+// Without a "shell" key there's no sh(): the default allow list reads files,
+// and that should be something a config asks for.
 impl Default for ShellConfig {
     fn default() -> Self {
         ShellConfig {
-            enabled: true,
+            enabled: false,
             network: Network::default(),
             writable: Vec::new(),
             timeout_ms: None,
@@ -364,6 +367,17 @@ mod tests {
         assert!(glob_match("*.delete*", "fs.delete_file"));
         assert!(glob_match("sh", "sh"));
         assert!(!glob_match("github.create_*", "github.list_issues"));
+    }
+
+    #[test]
+    fn shell_is_opt_in() {
+        let none: Config = serde_json::from_str("{}").unwrap();
+        assert!(!none.shell.enabled);
+        let empty: Config = serde_json::from_str(r#"{ "shell": {} }"#).unwrap();
+        assert!(empty.shell.enabled);
+        assert_eq!(empty.shell.allow, default_allow());
+        let off: Config = serde_json::from_str(r#"{ "shell": { "enabled": false } }"#).unwrap();
+        assert!(!off.shell.enabled);
     }
 
     #[test]
