@@ -22,7 +22,14 @@ export const metadata: Metadata = {
   other: { "theme-color": "#151515" },
 };
 
-// Farm renders the document shell; the root layout only wraps the page.
+// Farm renders the document shell; the root layout wraps the page and adds
+// Vercel Web Analytics (cookieless page views, served from this site). The
+// script is async, so it never holds up the page.
 export default function RootLayout({ children }: LayoutProps) {
-  return children;
+  return (
+    <>
+      <script async src="/_vercel/insights/script.js" />
+      {children}
+    </>
+  );
 }
