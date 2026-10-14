@@ -19,8 +19,8 @@ modebox -c modebox.json mcp                      # MCP server (stdio)
 
 ```json
 {
-  "mcpServers": { "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"] } },
-  "approve": ["github.create_*", "github.merge_*"],
+  "mcpServers": { "github": { "command": "docker", "args": ["run", "-i", "--rm", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", "ghcr.io/github/github-mcp-server"] } },
+  "approve": ["github.*"],
   "shell": { "enabled": true, "network": ["registry.npmjs.org", "*.github.com"], "allow": ["ls", "rg", "git status", "git diff"] },
   "fetch": { "allow": ["api.github.com"] },
   "limits": { "timeoutMs": 60000, "maxHostCalls": 500 }

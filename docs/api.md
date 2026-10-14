@@ -17,7 +17,7 @@ match r.outcome {
     Outcome::Completed(v) => println!("{v:?}"),
     Outcome::Failed(e) => eprintln!("{e}"),
     Outcome::Suspended(s) => {
-        // ask a human, later, maybe in another process:
+        // ask a human, later, maybe in another process (with the same $MODEBOX_SECRET):
         let r = engine.resume(&s.continuation, [(s.interrupts[0].id, Resolution::Approve)], &tools, RunOptions::default()).await;
     }
 }

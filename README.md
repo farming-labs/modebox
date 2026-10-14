@@ -49,12 +49,17 @@ List the MCP servers whose tools the agent's code may call, and which calls need
 
 ```json
 {
-  "mcpServers": { "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"] } },
-  "approve": ["github.create_*", "github.merge_*"]
+  "mcpServers": {
+    "github": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", "ghcr.io/github/github-mcp-server"]
+    }
+  },
+  "approve": ["github.*"]
 }
 ```
 
-Then add `modebox mcp -c modebox.json` to your agent as a local MCP server. The agent gets a `types` tool with the TypeScript signatures of everything it can call, and an `execute` tool that runs its code. The [setup guide](docs/integrations.md) has the config for each agent and explains how approvals reach you. The CLI also runs scripts on its own; see [the CLI and modebox.json](docs/configuration.md).
+`github.*` asks before every GitHub call; narrow it to the tools that write once you've seen their names with `modebox -c modebox.json types`. Then add `modebox mcp -c modebox.json` to your agent as a local MCP server. The agent gets a `types` tool with the TypeScript signatures of everything it can call, and an `execute` tool that runs its code. The [setup guide](docs/integrations.md) has the config for each agent and explains how approvals reach you. The CLI also runs scripts on its own; see [the CLI and modebox.json](docs/configuration.md).
 
 ## Use it from code
 
@@ -104,13 +109,13 @@ asyncio.run(main())
 ```rust
 use modebox_core::*;
 
-let engine = Engine::new()?;                     // compile/cache + pre-init, once per process
+let engine = Engine::new()?;                     // once per process; seals tokens with $MODEBOX_SECRET
 let mut tools = Toolbox::new();
 tools.add(Tool::new("payments.refund", refund).approval(Approval::Always));
 
 let r = engine.run(script, &tools, RunOptions::default()).await;   // script: the code your agent wrote
 if let Outcome::Suspended(s) = r.outcome {
-    // later, even in another process:
+    // later, even in another process with the same $MODEBOX_SECRET:
     let approve = [(s.interrupts[0].id, Resolution::Approve)];
     engine.resume(&s.continuation, approve, &tools, RunOptions::default()).await;
 }
