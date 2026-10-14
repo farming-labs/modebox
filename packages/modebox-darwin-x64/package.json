@@ -1,6 +1,6 @@
 {
   "name": "modebox-darwin-x64",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "The modebox native binding for macOS on Intel. Installed by the `modebox` package; don't depend on it directly.",
   "main": "modebox.node",
   "files": [
