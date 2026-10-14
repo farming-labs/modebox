@@ -4,6 +4,10 @@ Notable changes to modebox. The format follows [Keep a Changelog](https://keepac
 
 ## [Unreleased]
 
+### Changed
+
+- **`sh()` is opt-in in the CLI and MCP server.** Without a `"shell"` key in `modebox.json`, sandboxed code has no `sh()`. Its default allow list includes file readers such as `cat`, `head` and `rg`, and the OS sandbox blocks reads only from credential folders. Reading files outside the project should be something a config asks for. `"shell": {}` turns it on with the same defaults as before, and `modebox sh` is unchanged.
+
 ## [0.1.1] - 2026-10-12
 
 ### Added
