@@ -33,7 +33,7 @@ modebox --version
 
 `npm install modebox` and `pip install modebox` install the library, for embedding modebox in your own app. They don't include the `modebox` command.
 
-On Linux, `sh()` also needs bubblewrap; see [Linux](../README.md#linux) in the README.
+On Linux, `sh()` also needs bubblewrap; see [Linux](configuration.md#linux) in the configuration docs.
 
 ## 2. Write `modebox.json`
 
@@ -55,7 +55,7 @@ A starting point:
 - **`mcpServers`**: the servers whose tools become functions, such as `github.create_issue()`. Each entry takes `command`, `args`, `env` and `cwd`, the same shape as `.mcp.json`. Only local (stdio) servers are supported for now, not remote URLs.
 - **`approve`**: patterns for calls that pause for your approval. `*` matches anything.
 - **`shell`**: turns on `sh()`. Commands that start with an `allow` entry and use plain arguments run without asking; anything else pauses for approval. `network` is `false`, `true`, or a list of hosts such as `["registry.npmjs.org", "*.github.com"]`.
-- **`flows`**, **`fetch`**, **`fs`** and **`limits`**: data-flow rules, `fetch()`, file storage and resource limits. See the [README](../README.md#cli) and [storage.md](storage.md).
+- **`flows`**, **`fetch`**, **`fs`** and **`limits`**: data-flow rules, `fetch()`, file storage and resource limits. See [configuration.md](configuration.md) and [storage.md](storage.md).
 - **`mcp.approveTool`**: whether to offer the `approve` tool. See [Approvals](#approvals).
 
 modebox rejects fields it doesn't know, so a typo fails with an error instead of being ignored.
@@ -186,4 +186,4 @@ modebox marks `execute` and `approve` as destructive, so harnesses that run read
 - **The harness doesn't show modebox's tools.** Run `modebox -c modebox.json types` from the same folder. It shows errors in `modebox.json`, a missing `modebox` command, or an MCP server that fails to start. If it works there, the harness may not see the same `PATH`; use the full path to `modebox` as the command.
 - **Tool calls time out.** Raise the harness's MCP timeout, as in the setups above.
 - **A call was denied instead of asking you.** Your client is in the third group under [Approvals](#approvals), and `approveTool` is off.
-- **`sh()` says no OS sandbox is available.** On Linux, install bubblewrap and allow user namespaces; see [Linux](../README.md#linux) in the README. modebox never runs a command unconfined.
+- **`sh()` says no OS sandbox is available.** On Linux, install bubblewrap and allow user namespaces; see [Linux](configuration.md#linux) in the configuration docs. modebox never runs a command unconfined.
