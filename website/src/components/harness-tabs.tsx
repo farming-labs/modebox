@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Rich } from "./code-block";
 import { CopyButton } from "./copy-button";
 import { ShellCode } from "./shell-code";
@@ -20,14 +20,28 @@ export interface Harness {
 export function HarnessTabs({ items }: { items: Harness[] }) {
   const [active, setActive] = useState(items[0].id);
   const ids = items.map((h) => h.id);
+  const root = useRef<HTMLDivElement>(null);
+
+  // Each agent has a link of its own, like /setup#claude.
+  useEffect(() => {
+    const id = location.hash.slice(1);
+    if (!ids.includes(id)) return;
+    setActive(id);
+    root.current?.scrollIntoView({ block: "start" });
+  }, []);
+
+  function select(id: string) {
+    setActive(id);
+    history.replaceState(null, "", `#${id}`);
+  }
 
   return (
-    <div className="tabs">
+    <div className="tabs" ref={root}>
       <div
         className="tab-list"
         role="tablist"
         aria-label="Agent"
-        onKeyDown={(e) => onTabKeys(e, ids, active, setActive)}
+        onKeyDown={(e) => onTabKeys(e, ids, active, select)}
       >
         {items.map((h) => (
           <button
@@ -39,7 +53,7 @@ export function HarnessTabs({ items }: { items: Harness[] }) {
             aria-controls={`harness-${h.id}-panel`}
             tabIndex={h.id === active ? 0 : -1}
             className="tab"
-            onClick={() => setActive(h.id)}
+            onClick={() => select(h.id)}
           >
             {h.label}
           </button>
