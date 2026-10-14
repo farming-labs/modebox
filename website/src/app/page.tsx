@@ -13,7 +13,7 @@ const GUIDE = "/setup";
 const MAP = [
   { addr: "0x0000", segment: "engine", what: "QuickJS-ng in WebAssembly. Booted once, copied per run.", cost: "~0.1 ms" },
   { addr: "0x4000", segment: "boundary", what: "Only the tools you hand it. MCP servers become typed functions.", cost: "2 imports" },
-  { addr: "0x8000", segment: "pause", what: "Seals the run into a token, ~17 KB in our benchmark. Resume anywhere; nothing re-runs.", cost: "single-use" },
+  { addr: "0x8000", segment: "pause", what: "Seals the run into a token, ~17 KB in our benchmark. Resume later, in any process with the same key; nothing re-runs.", cost: "single-use" },
   { addr: "0xC000", segment: "files", what: "One API over local, S3, R2, GCS and Azure. Writes wait for you.", cost: "staged" },
   { addr: "0x10000", segment: "shell", what: "sh() under Seatbelt or bubblewrap + seccomp. Network off, or listed hosts only.", cost: "per host" },
 ];
@@ -44,7 +44,7 @@ const SOURCES: Omit<CodeTab, "html">[] = [
   {
     id: "rust",
     label: "Rust",
-    install: "cargo add modebox-core",
+    install: "cargo add modebox-core anyhow tokio -F tokio/full",
     file: "main.rs",
     code: SAMPLES.rust.code,
   },

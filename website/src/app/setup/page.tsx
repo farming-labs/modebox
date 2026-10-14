@@ -31,7 +31,7 @@ const CONFIG = block("modebox.json", "config");
 
 const FIELDS = [
   { key: "mcpServers", what: "Servers whose tools become functions, like `github.create_issue()`. Local (stdio) servers only." },
-  { key: "approve", what: "Patterns for calls that pause for your approval. `*` matches anything." },
+  { key: "approve", what: "Patterns for calls that pause for your approval. `*` matches anything, so `github.*` asks before every GitHub call." },
   { key: "shell", what: "Turns on `sh()`. Allowed commands run; anything else pauses. `network` is off, on, or a list of hosts." },
   { key: "flows · fetch · fs · limits", what: "Data-flow rules, `fetch()`, file storage and resource limits." },
   { key: "mcp.approveTool", what: "Whether to offer the `approve` tool. See approvals below." },
@@ -48,7 +48,7 @@ const HARNESSES: Harness[] = [
     file: "opencode.json",
     code: SAMPLES.opencode.code,
     notes: [
-      "`timeout` raises opencode's 5-second MCP timeout to 5 minutes.",
+      "`timeout`, in milliseconds, applies to every MCP request, including tool calls. `300000` gives long scripts 5 minutes.",
       '`"modebox_approve": "ask"` makes opencode ask you before every `approve` call. Keep it: opencode allows every tool by default.',
       "Use `integrations/opencode/modebox.json` from the repo as your `modebox.json`. It turns on the `approve` tool.",
       "Optional: copy `integrations/opencode/.opencode/plugin/modebox-sandbox.ts` into `.opencode/plugin/`, and opencode's own `bash` tool runs in modebox's OS sandbox too.",
@@ -62,9 +62,9 @@ const HARNESSES: Harness[] = [
     cmd: "claude mcp add --scope project modebox -- modebox mcp -c modebox.json",
     notes: [
       "Put the file at your project root, or let Claude Code write it with the command above.",
-      "Claude Code asks you to trust a project's MCP servers the first time it sees them.",
+      "In an interactive session, Claude Code asks you to trust a project's MCP servers the first time it sees them.",
       "Don't add `mcp__modebox__approve` to your allowed tools.",
-      "For long scripts, start it with `MCP_TOOL_TIMEOUT=300000 claude`. Check the connection with `claude mcp list` or `/mcp`.",
+      "Check the connection with `claude mcp list` or `/mcp`.",
     ],
   }),
   harness({
@@ -73,8 +73,9 @@ const HARNESSES: Harness[] = [
     file: "~/.codex/config.toml",
     code: SAMPLES.codex.code,
     notes: [
-      "Codex's config is global, so point it at your project's `modebox.json` with an absolute path.",
-      "`tool_timeout_sec` gives long scripts up to 5 minutes.",
+      "Put it in `~/.codex/config.toml`, or in `.codex/config.toml` in a trusted project, and point it at your `modebox.json` with an absolute path.",
+      "Codex starts MCP servers with only a few environment variables. `env_vars` forwards the ones your tools need, like the GitHub token.",
+      "`tool_timeout_sec` gives long scripts up to 5 minutes; the default is 60 seconds.",
     ],
   }),
   harness({
@@ -91,9 +92,9 @@ const HARNESSES: Harness[] = [
     id: "t3",
     label: "T3 Code",
     notes: [
-      "T3 Code drives the agents installed on your machine, such as Codex, Claude Code and opencode. It doesn't start MCP servers itself.",
+      "T3 Code drives the agents installed on your machine, such as Codex, Claude Code and opencode, and they load their own MCP servers.",
       "Set modebox up in the agent you use through T3 Code, using its tab here, and it's available in T3 Code too.",
-      "In T3 Code's Full Access mode, keep `approveTool` off; see approvals below.",
+      "New T3 Code threads start in Full access mode, which doesn't ask before tools run. Keep `approveTool` off there; see approvals below.",
     ],
   }),
   harness({
@@ -130,7 +131,7 @@ const FIXES = [
     key: "The agent doesn't see modebox",
     what: "Run `modebox -c modebox.json types` in the same folder. If that works, use the full path to `modebox` as the command.",
   },
-  { key: "Tool calls time out", what: "Raise your agent's MCP timeout; each tab above shows how." },
+  { key: "Tool calls time out", what: "Raise your agent's MCP timeout: `timeout` for opencode, `tool_timeout_sec` for Codex. Claude Code's default is already long." },
   { key: "A call was denied, not asked", what: "Your client can't ask you itself, and `approveTool` is off." },
   {
     key: "sh() has no OS sandbox",
@@ -175,7 +176,7 @@ export default function SetupPage() {
           <h1>Connect modebox to your agent.</h1>
           <p className="lede">
             No changes to your agent: install the CLI, list your tools, and add modebox to your
-            agent's MCP config. Your agent then gets three tools.
+            agent's MCP config. Your agent then gets up to three tools.
           </p>
           <Table rows={GETS} />
         </section>
@@ -193,8 +194,8 @@ export default function SetupPage() {
             <code>aarch64-unknown-linux-gnu</code>.
           </p>
           <p className="callout">
-            <code>npm install modebox</code> and <code>pip install modebox</code> install the library
-            for your own code. They don't include the <code>modebox</code> command.
+            <code>npm install modebox</code> and <code>pip install modebox</code> (Python 3.10 or later)
+            install the library for your own code. They don't include the <code>modebox</code> command.
           </p>
         </section>
 
@@ -202,13 +203,15 @@ export default function SetupPage() {
           <Label n="02">config</Label>
           <h2 id="config-title">List your tools in modebox.json</h2>
           <p className="section-copy">
-            Put it at your project root. Shell commands can only write inside that folder.
+            Put it at your project root. Shell commands can only write inside that folder and temp
+            folders.
           </p>
           <CodeBlock {...CONFIG} />
           <Table rows={FIELDS} wide />
           <p className="callout">
             Keep tokens out of the file. Your MCP servers inherit the environment your agent starts
-            them with, so <code>export GITHUB_PERSONAL_ACCESS_TOKEN=…</code> there.
+            them with, so <code>export GITHUB_PERSONAL_ACCESS_TOKEN=…</code> there. Codex passes only a
+            few variables, so its tab forwards the token with <code>env_vars</code>.
           </p>
           <p className="section-copy guide-gap">Check it before connecting anything:</p>
           <Cmd cmd="modebox -c modebox.json types" />

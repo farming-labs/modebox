@@ -9,9 +9,12 @@ export const SAMPLES = {
     lang: "json",
     code: `{
   "mcpServers": {
-    "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"] }
+    "github": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", "ghcr.io/github/github-mcp-server"]
+    }
   },
-  "approve": ["github.create_*", "github.merge_*"]
+  "approve": ["github.*"]
 }`,
   },
   node: {
@@ -62,23 +65,30 @@ asyncio.run(main())`,
     lang: "rs",
     code: `use modebox_core::*;
 
-let engine = Engine::new()?;
-let mut tools = Toolbox::new();
-tools.add(Tool::new("payments.refund", refund).approval(Approval::Always));
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let engine = Engine::new()?; // seals tokens with $MODEBOX_SECRET
+    let mut tools = Toolbox::new();
+    tools.add(Tool::new("payments.refund", refund).approval(Approval::Always));
 
-// \`script\` is the code your agent wrote.
-let r = engine.run(script, &tools, RunOptions::default()).await;
+    // \`script\` is the code your agent wrote.
+    let r = engine.run(script, &tools, RunOptions::default()).await;
 
-if let Outcome::Suspended(s) = r.outcome {
-    // Later, even in another process:
-    let approve = [(s.interrupts[0].id, Resolution::Approve)];
-    engine.resume(&s.continuation, approve, &tools, RunOptions::default()).await;
+    if let Outcome::Suspended(s) = r.outcome {
+        // Later, even in another process with the same $MODEBOX_SECRET:
+        let approve = [(s.interrupts[0].id, Resolution::Approve)];
+        engine.resume(&s.continuation, approve, &tools, RunOptions::default()).await;
+    }
+    Ok(())
 }`,
   },
   release: {
     lang: "sh",
     code: `curl -LO https://github.com/farming-labs/modebox/releases/latest/download/modebox-aarch64-apple-darwin.tar.gz
+curl -LO https://github.com/farming-labs/modebox/releases/latest/download/modebox-aarch64-apple-darwin.tar.gz.sha256
+shasum -a 256 -c modebox-aarch64-apple-darwin.tar.gz.sha256
 tar xzf modebox-aarch64-apple-darwin.tar.gz
+sudo mkdir -p /usr/local/bin
 sudo mv modebox-aarch64-apple-darwin/modebox /usr/local/bin/
 modebox --version`,
   },
@@ -86,9 +96,12 @@ modebox --version`,
     lang: "json",
     code: `{
   "mcpServers": {
-    "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"] }
+    "github": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", "ghcr.io/github/github-mcp-server"]
+    }
   },
-  "approve": ["github.create_*", "github.merge_*"],
+  "approve": ["github.*"],
   "shell": { "enabled": true, "network": false, "allow": ["ls", "rg", "git status", "git diff"] },
   "limits": { "timeoutMs": 60000 }
 }`,
@@ -123,6 +136,7 @@ modebox --version`,
     code: `[mcp_servers.modebox]
 command = "modebox"
 args = ["mcp", "-c", "/absolute/path/to/your/project/modebox.json"]
+env_vars = ["GITHUB_PERSONAL_ACCESS_TOKEN"]
 tool_timeout_sec = 300`,
   },
   cursor: {

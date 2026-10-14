@@ -26,7 +26,10 @@ Or download it from the [latest release](https://github.com/farming-labs/modebox
 
 ```bash
 curl -LO https://github.com/farming-labs/modebox/releases/latest/download/modebox-aarch64-apple-darwin.tar.gz
+curl -LO https://github.com/farming-labs/modebox/releases/latest/download/modebox-aarch64-apple-darwin.tar.gz.sha256
+shasum -a 256 -c modebox-aarch64-apple-darwin.tar.gz.sha256
 tar xzf modebox-aarch64-apple-darwin.tar.gz
+sudo mkdir -p /usr/local/bin
 sudo mv modebox-aarch64-apple-darwin/modebox /usr/local/bin/
 modebox --version
 ```
@@ -44,9 +47,12 @@ A starting point:
 ```json
 {
   "mcpServers": {
-    "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"] }
+    "github": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", "ghcr.io/github/github-mcp-server"]
+    }
   },
-  "approve": ["github.create_*", "github.merge_*"],
+  "approve": ["github.*"],
   "shell": { "enabled": true, "network": false, "allow": ["ls", "rg", "git status", "git diff"] },
   "limits": { "timeoutMs": 60000 }
 }
@@ -60,7 +66,9 @@ A starting point:
 
 modebox rejects fields it doesn't know, so a typo fails with an error instead of being ignored.
 
-**Keep secrets out of the file.** Your MCP servers inherit modebox's environment, which comes from the harness. Set tokens where you start the harness, for example `export GITHUB_PERSONAL_ACCESS_TOKEN=...`. If your harness doesn't pass its environment to MCP servers, set them in the `env` of its modebox entry instead.
+`"approve": ["github.*"]` makes every GitHub call ask you first. Once you've seen the tool names with `modebox -c modebox.json types`, you can narrow it to the ones that write, such as `github.create_*`, `github.update_*` and `github.merge_*`.
+
+**Keep secrets out of the file.** Your MCP servers inherit modebox's environment, which comes from the harness. Set tokens where you start the harness, for example `export GITHUB_PERSONAL_ACCESS_TOKEN=...`. Some harnesses pass MCP servers only a few variables (Codex does; see below). Then forward the token in the harness's modebox entry, or set it in that entry's `env`.
 
 **Check the config before connecting a harness:**
 
@@ -96,7 +104,7 @@ Copy [`integrations/opencode/opencode.json`](../integrations/opencode/opencode.j
 }
 ```
 
-- `timeout` raises opencode's MCP timeout from 5 seconds to 5 minutes.
+- `timeout`, in milliseconds, applies to each MCP request, including tool calls. `300000` gives long scripts 5 minutes.
 - `"modebox_approve": "ask"` makes opencode ask you before every call to modebox's `approve` tool. opencode allows every tool by default, so keep this line.
 
 Then copy [`integrations/opencode/modebox.json`](../integrations/opencode/modebox.json) as your `modebox.json` and add your MCP servers to it. It turns on the `approve` tool, which is safe because of the `ask` line above.
@@ -124,23 +132,25 @@ Or let Claude Code write it:
 claude mcp add --scope project modebox -- modebox mcp -c modebox.json
 ```
 
-- Claude Code asks you to trust a project's MCP servers the first time it sees them.
+- In an interactive session, Claude Code asks you to trust a project's MCP servers the first time it sees them.
 - The tools appear as `mcp__modebox__types`, `mcp__modebox__execute` and `mcp__modebox__approve`. Claude Code asks before using MCP tools unless you've allowed them; don't add `mcp__modebox__approve` to your allowed tools.
-- For long scripts, raise the tool timeout with the `MCP_TOOL_TIMEOUT` environment variable, in milliseconds: `MCP_TOOL_TIMEOUT=300000 claude`.
 - Check the connection with `claude mcp list`, or `/mcp` inside a session.
 
 ### Codex
 
-Add this to `~/.codex/config.toml` (also in [`integrations/codex/config.toml`](../integrations/codex/config.toml)):
+Add this to `~/.codex/config.toml`, or to `.codex/config.toml` in a trusted project (also in [`integrations/codex/config.toml`](../integrations/codex/config.toml)):
 
 ```toml
 [mcp_servers.modebox]
 command = "modebox"
 args = ["mcp", "-c", "/absolute/path/to/your/project/modebox.json"]
+env_vars = ["GITHUB_PERSONAL_ACCESS_TOKEN"]
 tool_timeout_sec = 300
 ```
 
-Codex's config is global, so point it at your project's `modebox.json` with an absolute path. `tool_timeout_sec` gives long scripts up to 5 minutes.
+- Point it at your project's `modebox.json` with an absolute path.
+- Codex starts MCP servers with only a few environment variables, such as `HOME` and `PATH`. `env_vars` forwards the ones your tools need, like the GitHub token.
+- `tool_timeout_sec` gives long scripts up to 5 minutes; the default is 60 seconds.
 
 ### Cursor
 
@@ -158,7 +168,7 @@ Cursor replaces `${workspaceFolder}` with your project's path, so the config pat
 
 ### T3 Code
 
-T3 Code doesn't start MCP servers itself. It drives the agents installed on your machine, such as Codex, Claude Code and opencode. Set modebox up in the agent you use through T3 Code, as described above, and it's available in T3 Code too. Whether you're asked before a tool runs follows T3 Code's runtime mode; see [Approvals](#approvals) for what that means for the `approve` tool.
+T3 Code drives the agents installed on your machine, such as Codex, Claude Code and opencode, and they load their own MCP servers. Set modebox up in the agent you use through T3 Code, as described above, and it's available in T3 Code too. Whether you're asked before a tool runs follows T3 Code's permission mode. New threads start in Full access, which doesn't ask; see [Approvals](#approvals) for what that means for the `approve` tool.
 
 ### Any other MCP client
 
@@ -177,13 +187,13 @@ For clients in the third group, `"mcp": { "approveTool": true }` in `modebox.jso
 **Only turn on `approveTool` if your harness asks you before every call to `approve`.** The model is the one that calls that tool. If the harness lets it through without asking, the model can approve its own actions. That means:
 - **opencode:** safe with `"modebox_approve": "ask"`, as in the ready-made config.
 - **Claude Code:** safe as long as `mcp__modebox__approve` isn't in your allowed tools.
-- **Any mode that skips permission prompts** (opencode with every tool allowed, Claude Code with permissions bypassed, T3 Code's Full Access mode): keep `approveTool` off.
+- **Any mode that skips permission prompts** (opencode with every tool allowed, Claude Code with permissions bypassed, T3 Code's Full access mode, its default): keep `approveTool` off.
 
 modebox marks `execute` and `approve` as destructive, so harnesses that run read-only tools without asking still ask about these two. `types` is read-only.
 
 ## Troubleshooting
 
 - **The harness doesn't show modebox's tools.** Run `modebox -c modebox.json types` from the same folder. It shows errors in `modebox.json`, a missing `modebox` command, or an MCP server that fails to start. If it works there, the harness may not see the same `PATH`; use the full path to `modebox` as the command.
-- **Tool calls time out.** Raise the harness's MCP timeout, as in the setups above.
+- **Tool calls time out.** Raise the harness's MCP timeout: `timeout` for opencode, `tool_timeout_sec` for Codex. Claude Code's default is already long; for other clients, check their MCP settings.
 - **A call was denied instead of asking you.** Your client is in the third group under [Approvals](#approvals), and `approveTool` is off.
 - **`sh()` says no OS sandbox is available.** On Linux, install bubblewrap and allow user namespaces; see [Linux](configuration.md#linux) in the configuration docs. modebox never runs a command unconfined.
