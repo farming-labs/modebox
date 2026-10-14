@@ -1,5 +1,7 @@
-# Add to ~/.codex/config.toml
+# Add to ~/.codex/config.toml, or to .codex/config.toml in a trusted project.
 [mcp_servers.modebox]
 command = "modebox"
 args = ["mcp", "-c", "/absolute/path/to/modebox.json"]
+# Codex passes MCP servers only a few environment variables; forward the ones your tools need.
+env_vars = ["GITHUB_PERSONAL_ACCESS_TOKEN"]
 tool_timeout_sec = 300
