@@ -1,0 +1,8 @@
+{
+  "name": "modebox-quickstart",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "modebox": "^0.1.2"
+  }
+}
