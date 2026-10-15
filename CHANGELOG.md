@@ -4,6 +4,16 @@ Notable changes to modebox. The format follows [Keep a Changelog](https://keepac
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-14
+
+### Security
+
+- Updated rustls to 0.23.46 and wasmtime to 49.0.3, for [RUSTSEC-2026-0346](https://rustsec.org/advisories/RUSTSEC-2026-0346) to [0349](https://rustsec.org/advisories/RUSTSEC-2026-0349) (rustls) and [RUSTSEC-2026-0353](https://rustsec.org/advisories/RUSTSEC-2026-0353) to [0364](https://rustsec.org/advisories/RUSTSEC-2026-0364) (wasmtime). rustls is used by `fetch()` and the S3, GCS and Azure stores. Most of the wasmtime advisories are in the component model, which modebox doesn't use.
+
+### Notes
+
+- The guest is unchanged, so continuation tokens and saved sessions from 0.1.2 resume in 0.1.3.
+
 ## [0.1.2] - 2026-10-13
 
 ### Changed

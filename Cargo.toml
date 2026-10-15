@@ -4,7 +4,7 @@ members = ["crates/modebox-core", "crates/modebox-cli", "crates/modebox-node", "
 exclude = ["guest"]
 
 [workspace.package]
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 rust-version = "1.96"
 license = "MIT"
@@ -13,7 +13,7 @@ homepage = "https://github.com/farming-labs/modebox"
 readme = "README.md"
 
 [workspace.dependencies]
-modebox-core = { path = "crates/modebox-core", version = "0.1.2" }
+modebox-core = { path = "crates/modebox-core", version = "0.1.3" }
 anyhow = "1"
 base64 = "0.22"
 blake3 = "1"
