@@ -1,0 +1,32 @@
+name: Feature request
+description: Something modebox should do that it doesn't yet.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you're trying to do
+      description: The task or workflow, and where modebox gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: The change you have in mind, if you have one. An example script or `modebox.json` helps.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: How you run modebox
+      multiple: true
+      options:
+        - CLI
+        - MCP server
+        - Node API
+        - Python API
+        - Rust API
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What you do instead today
+      description: Another tool, a workaround, or nothing yet.
