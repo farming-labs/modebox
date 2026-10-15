@@ -6,6 +6,8 @@
 
 [Website](https://modebox.farming-labs.dev) · [Setup guide](docs/integrations.md) · [How it works](docs/how-it-works.md) · [Security](SECURITY.md) · [Changelog](CHANGELOG.md)
 
+[![A script pauses before a refund and exits. A new process approves it and the script finishes; the same token is refused the second time.](docs/assets/quickstart.gif)](examples/quickstart)
+
 ```
             agent harness (opencode · Claude Code · Codex · AI SDK · your app)
                  │ MCP: execute / types / approve          │ Node · Python · Rust API
