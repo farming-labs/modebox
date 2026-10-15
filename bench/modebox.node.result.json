@@ -1,12 +1,12 @@
 {
-  "trivial_run_ms": 0.12391941699999999,
-  "one_host_call_ms": 0.17609271000000007,
-  "host_calls_200_in_one_run_ms": 7.807374999999979,
-  "parallel8_per_run_ms": 0.061152083,
-  "cpu_sum_10m_ms": 511.3440420000002,
-  "return_1mb_string_ms": 11.228999999999814,
-  "host_returns_5000_rows_ms": 23.393540999999914,
-  "interrupt_resume_pair_ms": 3.9712308200000006,
-  "token_bytes_after_200_calls": 16972,
-  "resume_after_200_calls_ms": 2.1861250000001746
+  "trivial_run_ms": 0.232364083,
+  "one_host_call_ms": 0.39614041500000013,
+  "host_calls_200_in_one_run_ms": 15.100500000000011,
+  "parallel8_per_run_ms": 0.172724042,
+  "cpu_sum_10m_ms": 683.3706670000001,
+  "return_1mb_string_ms": 16.490584000000126,
+  "host_returns_5000_rows_ms": 32.69008299999996,
+  "interrupt_resume_pair_ms": 3.7898275000000012,
+  "token_bytes_after_200_calls": 15840,
+  "resume_after_200_calls_ms": 0.8659170000000813
 }

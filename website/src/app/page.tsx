@@ -11,9 +11,9 @@ const GUIDE = "/setup";
 
 // The features, laid out like a memory map: address, segment, what it does, what it costs.
 const MAP = [
-  { addr: "0x0000", segment: "engine", what: "QuickJS-ng in WebAssembly. Booted once, copied per run.", cost: "~0.1 ms" },
+  { addr: "0x0000", segment: "engine", what: "QuickJS-ng in WebAssembly. Booted once, copied per run.", cost: "~0.2 ms" },
   { addr: "0x4000", segment: "boundary", what: "Only the tools you hand it. MCP servers become typed functions.", cost: "2 imports" },
-  { addr: "0x8000", segment: "pause", what: "Seals the run into a token, ~17 KB in our benchmark. Resume later, in any process with the same key; nothing re-runs.", cost: "single-use" },
+  { addr: "0x8000", segment: "pause", what: "Seals the run into a token, ~16 KB in our benchmark. Resume later, in any process with the same key; nothing re-runs.", cost: "single-use" },
   { addr: "0xC000", segment: "files", what: "One API over local, S3, R2, GCS and Azure. Writes wait for you.", cost: "staged" },
   { addr: "0x10000", segment: "shell", what: "sh() under Seatbelt or bubblewrap + seccomp. Network off, or listed hosts only.", cost: "per host" },
 ];
@@ -80,7 +80,7 @@ export default function HomePage() {
               script in a WebAssembly sandbox and pauses it mid-run when a call needs you. A fresh
               sandbox starts in{" "}
               <a className="inline" href={`${REPO}#benchmarks`}>
-                about 0.1 ms
+                about 0.2 ms
               </a>
               .
             </p>

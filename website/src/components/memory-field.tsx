@@ -242,7 +242,7 @@ export function MemoryField() {
         ? `paused at line ${line + 1}`
         : phase === "done"
           ? "returned · nothing ran twice"
-          : "booted from snapshot · ~0.1 ms";
+          : "booted from snapshot · ~0.2 ms";
 
   return (
     <div ref={rootRef} className={`sbx${frozen ? " is-frozen" : ""}`}>

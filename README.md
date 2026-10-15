@@ -27,8 +27,8 @@
 
 ## Why modebox
 
-- **Pause for approval, resume later.** A call that needs approval stops before it runs. The whole VM is snapshotted into an encrypted, single-use token (17 KB after 200 host calls in our benchmark), and resuming picks up exactly where it stopped.
-- **Fast.** A fresh sandbox starts in about 0.1 ms: the engine is pre-initialized once, and each run gets a copy-on-write instance of it.
+- **Pause for approval, resume later.** A call that needs approval stops before it runs. The whole VM is snapshotted into an encrypted, single-use token (16 KB after 200 host calls in our benchmark), and resuming picks up exactly where it stopped.
+- **Fast.** A fresh sandbox starts in about 0.2 ms: the engine is pre-initialized once, and each run gets a copy-on-write instance of it.
 - **Nothing ambient.** The sandbox has no files, sockets or environment. Your tools, typed for the model, are its only way out.
 - **A shell and files when you want them.** `sh()` runs commands under Seatbelt (macOS) or bubblewrap and seccomp (Linux), with the network off or limited to listed hosts. `fs.*` reads and writes local folders, S3, GCS or Azure, and staged writes wait for approval.
 - **Works with your agent.** One MCP server for opencode, Claude Code, Codex, Cursor and any other MCP client, plus Node, Python and Rust APIs.
@@ -148,17 +148,18 @@ V8-based tools run heavy computation much faster, and all of them are more matur
 
 ## Benchmarks
 
-Against Vercel Run, the closest package with the same model (QuickJS on wasm with host functions), running the identical script on Apple M-series with Node 24:
+Against Vercel Run, the closest package with the same model (QuickJS on wasm with host functions), running the identical script on GitHub's Apple Silicon runner with Node 24:
 
 | workload | Run 2.1.7 | modebox (Node) | |
 |---|---:|---:|---:|
-| trivial run | 3.57 ms | **0.12 ms** | 29× |
-| one host call | 4.13 ms | **0.18 ms** | 23× |
-| 200 sequential host calls in one run | 26.0 ms | **7.8 ms** | 3.3× |
-| token after 200 host calls | 1.13 MB | **17 KB** | 66× smaller |
-| CPU: sum 1..10M | 488 ms | 511 ms | ≈ (same interpreter) |
+| trivial run | 5.85 ms | **0.23 ms** | 25× |
+| one host call | 5.97 ms | **0.40 ms** | 15× |
+| 200 sequential host calls in one run | 57.4 ms | **15.1 ms** | 3.8× |
+| token after 200 host calls | 1.13 MB | **16 KB** | 71× smaller |
+| resume after 200 host calls | 67.2 ms | **0.87 ms** | 78× |
+| CPU: sum 1..10M | 716 ms | 683 ms | ≈ (same interpreter) |
 
-Measured with modebox 0.1.0 on 2026-10-10. CPU-bound code isn't faster: both run the QuickJS interpreter. All rows, the Rust figures and the caveats are in [docs/benchmarks.md](docs/benchmarks.md).
+Medians of 5 runs per package, measured with modebox 0.1.3 on 2026-10-15. CPU-bound code isn't faster: both run the QuickJS interpreter. All rows, the Rust figures, the runner and how to re-run it are in [docs/benchmarks.md](docs/benchmarks.md).
 
 ## Docs
 
