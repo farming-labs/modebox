@@ -114,7 +114,7 @@ function Locks({ head }: { head: string }) {
           mb1.q8Zt3fX0kR…
         </text>
         <text className="f-mono f-dim" x="208" y="97">
-          ~17 KB in our benchmark
+          ~16 KB in our benchmark
         </text>
       </g>
       {[
@@ -202,7 +202,7 @@ function Link({ n, d, label, lx, ly, head, anchor = "middle" }: { n: number; d: 
 }
 
 const LABEL =
-  "How a pause works. 1: the agent's script runs on computer A and stops right before a refund that needs your OK. 2: modebox keeps only the memory pages that changed, 14 of 156. 3: it compresses and encrypts them into a token of about 17 KB that works once. 4: hours later, on computer B, you approve the refund and the script carries on from line 4; lines 1 to 3 don't run again.";
+  "How a pause works. 1: the agent's script runs on computer A and stops right before a refund that needs your OK. 2: modebox keeps only the memory pages that changed, 14 of 156. 3: it compresses and encrypts them into a token of about 16 KB that works once. 4: hours later, on computer B, you approve the refund and the script carries on from line 4; lines 1 to 3 don't run again.";
 
 export function FigPause() {
   return (
