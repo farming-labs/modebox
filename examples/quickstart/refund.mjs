@@ -67,10 +67,10 @@ if (r.status === 'interrupted') {
   writeFileSync('paused.json', JSON.stringify({ continuation: r.continuation, interruptionId: i.id }));
   console.log(`\nPaused before ${i.hostFunctionName}(${JSON.stringify(i.args[0])}).`);
   console.log(`The whole sandbox is sealed in paused.json (${Math.round(r.continuation.length / 1024)} KB). This process can exit now.`);
-  console.log('Next: node refund.mjs approve   (or: deny)');
+  console.log('Next: node refund.mjs approve   (or: deny)\n');
 } else if (r.status === 'completed') {
-  console.log(`\nFinished: ${JSON.stringify(r.value)}. orders.get didn't run again; the sandbox picked up where it paused.`);
-  console.log('Try `node refund.mjs approve` again: a token works only once.');
+  console.log(`\nFinished. orders.get didn't run again: the sandbox resumed where it paused.`);
+  console.log('Run `node refund.mjs approve` again: a token works only once.\n');
 } else {
-  console.log(`\nRefused: ${r.error.message}`);
+  console.log(`\nRefused: ${r.error.message}\n`);
 }
