@@ -31,4 +31,6 @@ New process (pid 63786), resuming with "approve"
 - `paused.json`: the token and the id of the call waiting for approval.
 - `.used/`: spent tokens, so a token can't be resumed twice, even from another process.
 
+[demo.tape](demo.tape) re-records the GIF at the top of the main README with [vhs](https://github.com/charmbracelet/vhs).
+
 Next: [use modebox with your agent](../../docs/integrations.md), or [the full Node, Python and Rust APIs](../../docs/api.md).
