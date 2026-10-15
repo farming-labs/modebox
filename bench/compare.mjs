@@ -27,10 +27,13 @@ out.host_returns_5000_rows_ms = await time(() => run({ source: 'const r = await 
 
 const runner = createRunner({ continuationSecret: 'x'.repeat(32) });
 const approve = { ask: () => { const c = getHostFunctionContext(); if (!c.resume) c.interrupt({ kind: 'approval' }); return true; } };
+// Resume with a non-boolean value: both packages hand it to `ask` as `resume`. (modebox reads
+// `true` as "approve", which calls `ask` again without `resume`, so it would pause a second time.)
+const resumed = (r) => { if (r.status !== 'completed') throw new Error(`resume ended ${r.status}, expected completed`); };
 out.interrupt_resume_pair_ms = (await time(async () => {
   for (let i = 0; i < 50; i++) {
     const a = await runner.run({ source: 'return await approve.ask();', hostFunctions: { approve } });
-    await runner.run({ source: 'return await approve.ask();', hostFunctions: { approve }, continuation: a.continuation, resolutions: [{ interruptionId: a.interruptions[0].id, value: true }] });
+    resumed(await runner.run({ source: 'return await approve.ask();', hostFunctions: { approve }, continuation: a.continuation, resolutions: [{ interruptionId: a.interruptions[0].id, value: 'approved' }] }));
   }
 })) / 50;
 
@@ -38,7 +41,7 @@ const hist = { db: { get: (i) => 'z'.repeat(4096) }, approve };
 const src = 'for (let i = 0; i < 200; i++) await db.get(i); return await approve.ask();';
 const first = await runner.run({ source: src, hostFunctions: hist, limits: { maxBridgeRequests: 1000 } });
 out.token_bytes_after_200_calls = first.continuation.length;
-out.resume_after_200_calls_ms = await time(() => runner.run({ source: src, hostFunctions: hist, limits: { maxBridgeRequests: 1000 }, continuation: first.continuation, resolutions: [{ interruptionId: first.interruptions[0].id, value: true }] }));
+out.resume_after_200_calls_ms = await time(async () => resumed(await runner.run({ source: src, hostFunctions: hist, limits: { maxBridgeRequests: 1000 }, continuation: first.continuation, resolutions: [{ interruptionId: first.interruptions[0].id, value: 'approved' }] })));
 
 console.log(JSON.stringify(out, null, 2));
 process.exit(0);
