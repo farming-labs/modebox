@@ -6,3 +6,6 @@ contact_links:
   - name: Setup guide for agent harnesses
     url: https://github.com/farming-labs/modebox/blob/main/docs/integrations.md
     about: Installing the CLI, writing modebox.json, and connecting opencode, Claude Code, Codex or Cursor.
+  - name: Ask a question
+    url: https://github.com/farming-labs/modebox/discussions
+    about: Questions about using modebox, and ideas that aren't a concrete request yet.
