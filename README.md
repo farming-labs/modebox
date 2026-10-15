@@ -43,6 +43,15 @@ pip install modebox        # the Python API (Python 3.10+); a prebuilt wheel per
 
 Prebuilt CLI binaries for each platform, with SHA-256 checksums, are attached to every [GitHub release](https://github.com/farming-labs/modebox/releases). On Linux, `sh()` needs bubblewrap; see [Linux](docs/configuration.md#linux).
 
+## Try it
+
+[examples/quickstart](examples/quickstart) runs a script that pauses before a refund, saves the paused sandbox to a file and exits. A second process approves it, and the script carries on from where it stopped. It needs only Node:
+
+```bash
+git clone https://github.com/farming-labs/modebox && cd modebox/examples/quickstart
+npm install && node refund.mjs && node refund.mjs approve
+```
+
 ## Use it with your agent
 
 List the MCP servers whose tools the agent's code may call, and which calls need your approval, in `modebox.json`:
