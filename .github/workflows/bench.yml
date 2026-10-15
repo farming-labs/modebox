@@ -1,0 +1,45 @@
+name: bench
+
+# Re-measures docs/benchmarks.md on a GitHub-hosted Apple Silicon runner, so the
+# numbers don't depend on what else a laptop is doing. Run it from the Actions tab.
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Runs per package (each row reports the median)
+        default: "5"
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Runner
+        run: |
+          sysctl -n machdep.cpu.brand_string hw.ncpu
+          node --version
+      - name: Build the Node binding
+        run: |
+          cargo build --release -p modebox-node
+          cp target/release/libmodebox_node.dylib packages/modebox/modebox.node
+      - name: Install Vercel Run
+        run: npm install --prefix bench --no-audit --no-fund
+      - name: Node (Run vs modebox)
+        run: node bench/repeat.mjs "${{ inputs.runs }}" | tee bench/node.json
+      - name: Rust
+        run: cargo run --release -p modebox-core --example bench | tee bench/rust.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bench-results
+          path: |
+            bench/node.json
+            bench/rust.json
