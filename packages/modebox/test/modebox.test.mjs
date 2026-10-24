@@ -57,6 +57,37 @@ test('limits must be positive integers', async () => {
   assert.equal((await run({ source: '1', limits: { timeoutMs: 1000, fuel: 2 ** 40 } })).value, 1);
 });
 
+test('an AbortSignal stops a busy run', async () => {
+  const start = Date.now();
+  await assert.rejects(
+    run({ source: 'while (true) {}', abortSignal: AbortSignal.timeout(100), limits: { timeoutMs: 10_000 } }),
+    (e) => e instanceof RunError && e.kind === 'Aborted' && e.code === 'RUN_ABORTED',
+  );
+  assert.ok(Date.now() - start < 2000);
+  await assert.rejects(run({ source: '1', abortSignal: AbortSignal.abort() }), (e) => e.code === 'RUN_ABORTED');
+});
+
+test('aborting a run waiting on a host function also signals the host function', async () => {
+  let hostSignal;
+  const hang = () => {
+    hostSignal = getHostFunctionContext().abortSignal;
+    return new Promise((resolve) => hostSignal.addEventListener('abort', () => resolve('stopped')));
+  };
+  await assert.rejects(
+    run({ source: 'await t.hang()', hostFunctions: { t: { hang } }, abortSignal: AbortSignal.timeout(100) }),
+    (e) => e.code === 'RUN_ABORTED',
+  );
+  assert.equal(hostSignal.aborted, true);
+  // ...and when the run fails for another reason
+  let failSignal;
+  const wait = () => {
+    failSignal = getHostFunctionContext().abortSignal;
+    return new Promise(() => {});
+  };
+  await assert.rejects(run({ source: 'await t.wait()', hostFunctions: { t: { wait } }, limits: { timeoutMs: 100 } }), (e) => e.code === 'RUN_TIMEOUT');
+  assert.equal(failSignal.aborted, true);
+});
+
 test('getHostFunctionContext().interrupt() suspends; resume re-invokes with the resolution', async () => {
   const runner = createRunner({ continuationSecret: 'k'.repeat(32) });
   let calls = 0;

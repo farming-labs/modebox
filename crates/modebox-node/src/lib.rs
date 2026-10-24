@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use modebox_core::{
-    Approval, Call, ClockMode, Engine, EngineConfig, Limits, Outcome, Resolution, RunOptions, RunResult,
+    Approval, Call, Cancel, ClockMode, Engine, EngineConfig, Limits, Outcome, Resolution, RunOptions, RunResult,
     StoreContinuations, Tool, ToolError, Toolbox, Value,
 };
 use napi::bindgen_prelude::Promise;
@@ -62,6 +62,32 @@ pub fn create_engine(config: String) -> napi::Result<u32> {
 #[napi]
 pub fn drop_engine(id: u32) {
     engines().lock().unwrap().remove(&id);
+}
+
+fn cancels() -> &'static Mutex<HashMap<u32, Cancel>> {
+    static C: OnceLock<Mutex<HashMap<u32, Cancel>>> = OnceLock::new();
+    C.get_or_init(Default::default)
+}
+
+/// A cancel handle to pass to `run`/`resume` as `options.cancelId`.
+#[napi]
+pub fn create_cancel() -> u32 {
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+    let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    cancels().lock().unwrap().insert(id, Cancel::new());
+    id
+}
+
+#[napi]
+pub fn cancel(id: u32) {
+    if let Some(c) = cancels().lock().unwrap().get(&id) {
+        c.cancel();
+    }
+}
+
+#[napi]
+pub fn drop_cancel(id: u32) {
+    cancels().lock().unwrap().remove(&id);
 }
 
 fn engine(id: u32) -> napi::Result<Engine> {
@@ -131,7 +157,7 @@ async fn dispatch_call(d: &Dispatch, call: Call) -> Result<Value, ToolError> {
     Err(te)
 }
 
-/// `options`: `{ timeoutMs?, fuel?, memoryLimitBytes?, maxHostCalls?, maxConcurrency?, maxValueBytes?, maxLogBytes?, seed?: hex, virtualTimeMs?, mode?, filename?, typescript? }`.
+/// `options`: `{ cancelId?, timeoutMs?, fuel?, memoryLimitBytes?, maxHostCalls?, maxConcurrency?, maxValueBytes?, maxLogBytes?, seed?: hex, virtualTimeMs?, mode?, filename?, typescript? }`.
 fn run_options(options: &str) -> napi::Result<RunOptions> {
     let o: Json = serde_json::from_str(options).map_err(err)?;
     let mut l = Limits::default();
@@ -155,6 +181,9 @@ fn run_options(options: &str) -> napi::Result<RunOptions> {
         l.max_log_bytes = n as usize;
     }
     let mut opts = RunOptions { limits: l, ..RunOptions::default() };
+    if let Some(id) = o["cancelId"].as_u64() {
+        opts.cancel = cancels().lock().unwrap().get(&(id as u32)).cloned();
+    }
     if let Some(seed) = o["seed"].as_str() {
         let mut s = [0u8; 32];
         for (i, ch) in seed.as_bytes().chunks(2).take(32).enumerate() {

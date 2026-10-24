@@ -316,6 +316,48 @@ async fn timeout_also_covers_slow_tools() {
     assert_eq!(err(&r).kind, ErrorKind::Timeout);
 }
 
+fn cancel_after(ms: u64) -> Cancel {
+    let cancel = Cancel::new();
+    let c = cancel.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(ms)).await;
+        c.cancel();
+    });
+    cancel
+}
+
+#[tokio::test]
+async fn cancel_stops_a_busy_run() {
+    let start = Instant::now();
+    let o = RunOptions { cancel: Some(cancel_after(100)), ..opts() };
+    let r = engine().run("while (true) {}", &math(), o).await;
+    assert_eq!(err(&r).kind, ErrorKind::Aborted);
+    assert!(r.stats.aborted);
+    assert!(start.elapsed() < Duration::from_millis(600), "took {:?}", start.elapsed());
+}
+
+#[tokio::test]
+async fn cancel_stops_a_run_waiting_on_a_tool() {
+    let mut t = Toolbox::new();
+    t.func("hang", |_c: Call| async move {
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        Ok(Value::Null)
+    });
+    let start = Instant::now();
+    let o = RunOptions { cancel: Some(cancel_after(100)), ..opts() };
+    let r = engine().run("await hang()", &t, o).await;
+    assert_eq!(err(&r).kind, ErrorKind::Aborted);
+    assert!(start.elapsed() < Duration::from_millis(600), "took {:?}", start.elapsed());
+}
+
+#[tokio::test]
+async fn a_cancelled_run_does_not_start() {
+    let cancel = Cancel::new();
+    cancel.cancel();
+    let r = engine().run("1", &math(), RunOptions { cancel: Some(cancel), ..opts() }).await;
+    assert_eq!(err(&r).kind, ErrorKind::Aborted);
+}
+
 #[tokio::test]
 async fn fuel_is_deterministic_and_enforced() {
     let code = "let s = 0; for (let i = 0; i < 100000; i++) s += i; s";

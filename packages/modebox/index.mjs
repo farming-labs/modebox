@@ -208,9 +208,10 @@ function checkLimits(limits) {
   }
 }
 
-function nativeOptions(o = {}) {
+function nativeOptions(o = {}, cancelId) {
   const l = o.limits ?? {};
   return JSON.stringify({
+    cancelId,
     timeoutMs: l.timeoutMs,
     fuel: l.fuel,
     memoryLimitBytes: l.memoryLimitBytes,
@@ -226,7 +227,7 @@ function nativeOptions(o = {}) {
   });
 }
 
-function makeDispatch(fns, onCall) {
+function makeDispatch(fns, onCall, abortSignal) {
   return async (msg) => {
     const m = JSON.parse(msg);
     const { name, id, args, resume } = m;
@@ -236,6 +237,7 @@ function makeDispatch(fns, onCall) {
     const ctx = {
       callId: id,
       hostFunctionName: name,
+      abortSignal,
       resume:
         resume === null || resume === undefined
           ? undefined
@@ -312,20 +314,48 @@ export class Runner {
     checkLimits(o.limits);
     const fns = flatten(o.hostFunctions);
     const tools = JSON.stringify(toolSpecs(fns, o.approve, o.schemas, o.sources, o.sinks));
-    const dispatch = makeDispatch(fns, o.onCall);
-    const opts = nativeOptions(o);
-    let out;
-    if (o.continuation) {
-      const resolutions = (o.resolutions ?? []).map((r) => {
-        const id = Number(r.interruptionId ?? r.id);
-        const action = r.action ?? (r.value === false ? 'deny' : r.value === true ? 'approve' : 'resume');
-        return { id, action, value: encode(r.value), message: r.message };
-      });
-      out = await native.resume(this.#engine, o.continuation, JSON.stringify(resolutions), tools, opts, dispatch);
-    } else {
-      out = await native.run(this.#engine, o.source, tools, opts, dispatch);
+    // Host functions get a signal that fires when the run is aborted or fails,
+    // so work they started for it can stop.
+    const hostAbort = new AbortController();
+    const dispatch = makeDispatch(fns, o.onCall, hostAbort.signal);
+    const signal = o.abortSignal;
+    let cancelId;
+    const onAbort = () => {
+      native.cancel(cancelId);
+      hostAbort.abort(signal.reason);
+    };
+    if (signal) {
+      cancelId = native.createCancel();
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
     }
-    const result = shape(out, o);
+    const opts = nativeOptions(o, cancelId);
+    let out;
+    try {
+      if (o.continuation) {
+        const resolutions = (o.resolutions ?? []).map((r) => {
+          const id = Number(r.interruptionId ?? r.id);
+          const action = r.action ?? (r.value === false ? 'deny' : r.value === true ? 'approve' : 'resume');
+          return { id, action, value: encode(r.value), message: r.message };
+        });
+        out = await native.resume(this.#engine, o.continuation, JSON.stringify(resolutions), tools, opts, dispatch);
+      } else {
+        out = await native.run(this.#engine, o.source, tools, opts, dispatch);
+      }
+    } finally {
+      if (signal) {
+        signal.removeEventListener('abort', onAbort);
+        native.dropCancel(cancelId);
+      }
+    }
+    let result;
+    try {
+      result = shape(out, o);
+    } catch (e) {
+      hostAbort.abort(e);
+      throw e;
+    }
+    if (result.status === 'failed') hostAbort.abort(result.error);
     if (o.onLog) for (const l of result.logs) o.onLog(l);
     return result;
   }

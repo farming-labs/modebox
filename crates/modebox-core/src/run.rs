@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use futures::FutureExt;
@@ -123,6 +124,47 @@ pub struct RunOptions {
     pub clock: ClockMode,
     /// Streaming callback for logs and tool-call progress.
     pub on_event: Option<EventSink>,
+    /// Stops the run when cancelled; see [`Cancel`].
+    pub cancel: Option<Cancel>,
+}
+
+/// Stops a run from elsewhere. Pass a clone in [`RunOptions::cancel`] and call
+/// [`Cancel::cancel`]: the run fails with [`ErrorKind::Aborted`] within a few
+/// milliseconds, whether the script is computing or waiting on host calls, and
+/// calls still in flight are dropped.
+#[derive(Clone, Debug, Default)]
+pub struct Cancel(Arc<CancelState>);
+
+#[derive(Debug, Default)]
+struct CancelState {
+    cancelled: AtomicBool,
+    notify: tokio::sync::Notify,
+}
+
+impl Cancel {
+    pub fn new() -> Self {
+        Cancel::default()
+    }
+
+    pub fn cancel(&self) {
+        self.0.cancelled.store(true, Ordering::SeqCst);
+        self.0.notify.notify_waiters();
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.0.cancelled.load(Ordering::SeqCst)
+    }
+
+    async fn cancelled(&self) {
+        loop {
+            // Created before the check, so a cancel in between still wakes it.
+            let notified = self.0.notify.notified();
+            if self.is_cancelled() {
+                return;
+            }
+            notified.await;
+        }
+    }
 }
 
 impl Default for RunOptions {
@@ -135,6 +177,7 @@ impl Default for RunOptions {
             seed: None,
             clock: ClockMode::Real,
             on_event: None,
+            cancel: None,
         }
     }
 }
@@ -231,6 +274,8 @@ pub enum ErrorKind {
     /// The script awaited something that can never settle.
     Deadlock,
     Timeout,
+    /// [`RunOptions::cancel`] was cancelled.
+    Aborted,
     CpuLimit,
     MemoryLimit,
     StackOverflow,
@@ -595,6 +640,8 @@ impl<'a> Driver<'a> {
         started: Instant,
     ) -> Self {
         let deadline = started + opts.limits.timeout;
+        let mut guest = guest;
+        guest.store.data_mut().cancel = opts.cancel.clone();
         Driver {
             engine,
             tools,
@@ -654,6 +701,10 @@ impl<'a> Driver<'a> {
     /// Call into the guest with the wall-clock deadline armed, mapping traps
     /// to run errors.
     async fn guest_call(&mut self, op: GuestOp) -> Result<u32, RunError> {
+        if self.cancelled() {
+            self.stats.aborted = true;
+            return Err(self.abort_error());
+        }
         if Instant::now() >= self.deadline {
             return Err(self.timeout_error());
         }
@@ -668,6 +719,14 @@ impl<'a> Driver<'a> {
             self.stats.aborted = true;
             self.trap_error(e)
         })
+    }
+
+    fn cancelled(&self) -> bool {
+        self.opts.cancel.as_ref().is_some_and(Cancel::is_cancelled)
+    }
+
+    fn abort_error(&self) -> RunError {
+        RunError::new(ErrorKind::Aborted, "AbortError", "the run was aborted")
     }
 
     fn timeout_error(&self) -> RunError {
@@ -688,6 +747,7 @@ impl<'a> Driver<'a> {
                 "CpuLimitError",
                 format!("run exceeded its CPU budget of {} fuel", self.opts.limits.fuel.unwrap_or(0)),
             ),
+            Some(wasmtime::Trap::Interrupt) if self.cancelled() => self.abort_error(),
             Some(wasmtime::Trap::Interrupt) => self.timeout_error(),
             Some(wasmtime::Trap::StackOverflow) => {
                 RunError::new(ErrorKind::StackOverflow, "RangeError", "Maximum call stack size exceeded")
@@ -1004,6 +1064,13 @@ impl<'a> Driver<'a> {
         let has_timer = timer_wait.is_some();
         let timer_sleep = tokio::time::sleep(timer_wait.unwrap_or(Duration::from_secs(3600)));
         let has_inflight = !self.inflight.is_empty();
+        let cancel = self.opts.cancel.clone();
+        let cancelled = async move {
+            match cancel {
+                Some(c) => c.cancelled().await,
+                None => std::future::pending().await,
+            }
+        };
         tokio::select! {
             Some((id, r)) = self.inflight.next(), if has_inflight => {
                 self.complete(id, r);
@@ -1016,6 +1083,11 @@ impl<'a> Driver<'a> {
             }
             _ = tokio::time::sleep_until(self.deadline.into()) => {
                 return Err(self.timeout_error());
+            }
+            _ = cancelled => {
+                // The VM still holds the calls it was waiting on.
+                self.stats.aborted = true;
+                return Err(self.abort_error());
             }
         }
         Ok(())
