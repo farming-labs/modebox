@@ -4,6 +4,8 @@ Notable changes to modebox. The format follows [Keep a Changelog](https://keepac
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-23
+
 ### Added
 
 - **A resumed host function sees the payload it interrupted with.** When a call runs again after `interrupt()`, its resume context carries the original payload next to the resolution: `resume.payload` in Node and Python, and `Call::interrupt_payload` in Rust. A host function that raises several kinds of interrupt no longer has to keep its own record of which question it asked. Node's `resume` also has the `interruptionId` it answers.
@@ -15,6 +17,7 @@ Notable changes to modebox. The format follows [Keep a Changelog](https://keepac
 
 - **A run that fails on an uncaught error with a `code` reports that code.** If a host function throws an error with a `code` (or the script throws one) and nothing catches it, `RunError.code` is now that code, for example `E_QUOTA`, instead of `RUN_UNCAUGHT`. `kind` is still `Uncaught`, and errors without a code are unchanged. Rust's `RunError` has a new `code` field.
 - **Node: limits must be positive integers.** `run()` and `createRunner()` now throw a `TypeError` such as `limits.timeoutMs must be a positive integer.` for a zero, negative, fractional or non-number limit, or one above 2³¹−1. Such values used to be ignored, except `0`, which was applied as written.
+- **Rust: new enum variants and struct fields.** `ErrorKind` has `Aborted` and `CpuTimeout`, and `Limits`, `RunOptions`, `RunError` and `Call` have new fields (`cpu_time`, `cancel`, `code` and `interrupt_payload`). A `match` that lists every `ErrorKind` needs arms for the new variants, and a struct literal without `..Default::default()` needs the new fields.
 
 ### Fixed
 
@@ -23,6 +26,10 @@ Notable changes to modebox. The format follows [Keep a Changelog](https://keepac
 ### Security
 
 - Updated wasmtime to 49.0.4, rustls-webpki to 0.103.16, webpki-root-certs to 1.0.11 and tokio to 1.54.1, for [RUSTSEC-2026-0378](https://rustsec.org/advisories/RUSTSEC-2026-0378), [0379](https://rustsec.org/advisories/RUSTSEC-2026-0379), [0382](https://rustsec.org/advisories/RUSTSEC-2026-0382), [0383](https://rustsec.org/advisories/RUSTSEC-2026-0383) and [0386](https://rustsec.org/advisories/RUSTSEC-2026-0386). The one that applies most directly is 0379: on aarch64, which includes Apple Silicon, Cranelift could compile a large `br_table` to jump to the wrong target. The certificate fixes cover `fetch()` and the S3, GCS and Azure stores. 0378 is in the component model and 0386 in tokio's `AsyncFd`, neither of which modebox uses directly.
+
+### Notes
+
+- The guest is unchanged, so continuation tokens and saved sessions from 0.1.3 resume in 0.2.0.
 
 ## [0.1.3] - 2026-10-14
 
