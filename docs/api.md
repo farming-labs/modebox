@@ -47,6 +47,8 @@ if (r.status === 'interrupted') {
 }
 ```
 
+To run code written for Vercel's `run` package, import the same API from `modebox/run`; see [In place of Vercel's `run`](run-compat.md).
+
 ## Python
 
 The same API in Python 3.10+, with `async def` or plain host functions. See [crates/modebox-python](../crates/modebox-python/README.md) for how values map.

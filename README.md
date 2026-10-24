@@ -166,6 +166,7 @@ Medians of 5 runs per package, measured with modebox 0.1.3 on 2026-10-15. CPU-bo
 - [Setup guide](docs/integrations.md): connect opencode, Claude Code, Codex, Cursor, T3 Code or any MCP client, and how approvals reach you
 - [The CLI and `modebox.json`](docs/configuration.md): commands, data-flow rules, shell rules, Linux setup
 - [Using modebox from code](docs/api.md): the Node, Python and Rust APIs
+- [In place of Vercel's `run`](docs/run-compat.md): `modebox/run`, the same API, for libraries such as `@ai-sdk/code-mode`
 - [How it works](docs/how-it-works.md): isolation, pause tokens, approvals over MCP, `fetch()`, the shell sandbox, files
 - [Storage](docs/storage.md): the `fs` API and how to add a backend
 - [Benchmarks](docs/benchmarks.md) and the [full comparison](docs/comparison.md)
