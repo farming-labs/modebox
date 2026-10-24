@@ -315,6 +315,8 @@ def require_approval(fn: Callable[..., Any]) -> Callable[..., Any]:
 @dataclass(frozen=True)
 class Limits:
     timeout_ms: int | None = None
+    #: Time the script may spend executing, not counting waits on host calls (fresh on each resume).
+    cpu_timeout_ms: int | None = None
     #: Deterministic CPU budget in wasm fuel units (cumulative across resumes).
     fuel: int | None = None
     memory_limit_bytes: int | None = None
@@ -498,6 +500,7 @@ def _native_options(limits: dict[str, int], seed: Any, virtual_time: Any, mode: 
         virtual_time = None
     o = {
         "timeoutMs": limits.get("timeout_ms"),
+        "cpuTimeoutMs": limits.get("cpu_timeout_ms"),
         "fuel": limits.get("fuel"),
         "memoryLimitBytes": limits.get("memory_limit_bytes"),
         "maxHostCalls": limits.get("max_host_calls"),

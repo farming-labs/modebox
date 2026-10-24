@@ -143,7 +143,7 @@ async fn dispatch_call(d: &Dispatch, call: Call) -> Result<Value, ToolError> {
     Err(te)
 }
 
-/// `options`: `{ timeoutMs?, fuel?, memoryLimitBytes?, maxHostCalls?, maxConcurrency?, maxValueBytes?, maxLogBytes?, seed?: hex, virtualTimeMs?, mode?, filename?, typescript? }`.
+/// `options`: `{ timeoutMs?, cpuTimeoutMs?, fuel?, memoryLimitBytes?, maxHostCalls?, maxConcurrency?, maxValueBytes?, maxLogBytes?, seed?: hex, virtualTimeMs?, mode?, filename?, typescript? }`.
 fn run_options(options: &str) -> PyResult<RunOptions> {
     let o: Json = serde_json::from_str(options).map_err(err)?;
     let mut l = Limits::default();
@@ -151,6 +151,9 @@ fn run_options(options: &str) -> PyResult<RunOptions> {
         l.timeout = Duration::from_millis(ms);
     }
     l.fuel = o["fuel"].as_u64();
+    if let Some(ms) = o["cpuTimeoutMs"].as_u64() {
+        l.cpu_time = Some(Duration::from_millis(ms));
+    }
     if let Some(n) = o["memoryLimitBytes"].as_u64() {
         l.memory_bytes = n as usize;
     }

@@ -57,6 +57,16 @@ test('limits must be positive integers', async () => {
   assert.equal((await run({ source: '1', limits: { timeoutMs: 1000, fuel: 2 ** 40 } })).value, 1);
 });
 
+test('cpuTimeoutMs stops busy code, but time spent waiting on host functions does not count', async () => {
+  await assert.rejects(
+    run({ source: 'while (true) {}', limits: { cpuTimeoutMs: 100, timeoutMs: 10_000 } }),
+    (e) => e instanceof RunError && e.kind === 'CpuTimeout' && e.code === 'RUN_CPU_TIMEOUT',
+  );
+  const nap = () => new Promise((resolve) => setTimeout(() => resolve(1), 150));
+  const r = await run({ source: 'await t.nap(); await t.nap(); return "ok"', hostFunctions: { t: { nap } }, limits: { cpuTimeoutMs: 100 } });
+  assert.equal(r.value, 'ok');
+});
+
 test('an AbortSignal stops a busy run', async () => {
   const start = Date.now();
   await assert.rejects(

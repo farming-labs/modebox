@@ -3,6 +3,8 @@ export interface HostFunctions { [name: string]: HostFunction | HostFunctions }
 
 export interface Limits {
   timeoutMs?: number;
+  /** Time the script may spend executing, not counting waits on host calls (fresh on each resume). */
+  cpuTimeoutMs?: number;
   /** Deterministic CPU budget in wasm fuel units (cumulative across resumes). */
   fuel?: number;
   memoryLimitBytes?: number;

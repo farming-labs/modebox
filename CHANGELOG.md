@@ -8,6 +8,7 @@ Notable changes to modebox. The format follows [Keep a Changelog](https://keepac
 
 - **A resumed host function sees the payload it interrupted with.** When a call runs again after `interrupt()`, its resume context carries the original payload next to the resolution: `resume.payload` in Node and Python, and `Call::interrupt_payload` in Rust. A host function that raises several kinds of interrupt no longer has to keep its own record of which question it asked. Node's `resume` also has the `interruptionId` it answers.
 - **Cancel a run.** Node's `run()` takes an `abortSignal`: aborting it stops the run within a few milliseconds, whether the script is computing or waiting on host calls, and it fails with kind `Aborted` and code `RUN_ABORTED`. Host functions get `getHostFunctionContext().abortSignal`, which fires when the run is aborted or fails, so work they started can stop. In Rust, pass a `Cancel` in `RunOptions::cancel`.
+- **A CPU time limit in milliseconds.** `cpuTimeoutMs` (Node and `modebox.json`), `cpu_timeout_ms` (Python) and `Limits::cpu_time` (Rust) cap the time the script spends executing, not counting time spent waiting on host calls. Each resume gets a fresh budget. A run that exceeds it fails with kind `CpuTimeout` and code `RUN_CPU_TIMEOUT`. Unlike `fuel`, it isn't deterministic, but it's set in milliseconds and needs no metering.
 
 ### Changed
 

@@ -359,6 +359,37 @@ async fn a_cancelled_run_does_not_start() {
 }
 
 #[tokio::test]
+async fn cpu_time_limit_counts_only_time_spent_executing() {
+    let mut o = opts();
+    o.limits.cpu_time = Some(Duration::from_millis(100));
+    let start = Instant::now();
+    let r = engine().run("while (true) {}", &math(), o.clone()).await;
+    assert_eq!(err(&r).kind, ErrorKind::CpuTimeout);
+    assert!(start.elapsed() < Duration::from_millis(600), "took {:?}", start.elapsed());
+
+    // Waiting on host calls doesn't count against it.
+    let mut t = Toolbox::new();
+    t.func("nap", |_c: Call| async move {
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        Ok(Value::from(1))
+    });
+    let r = engine().run("await nap(); await nap(); 'ok'", &t, o).await;
+    assert_eq!(ok(&r), &Value::from("ok"));
+}
+
+#[test]
+fn limits_sealed_without_a_cpu_time_still_load() {
+    let old = serde_json::json!({
+        "timeout": 30000, "fuel": null, "memory_bytes": 67108864, "max_host_calls": 1000,
+        "max_concurrency": 32, "max_value_bytes": 16777216, "max_log_bytes": 1048576,
+    });
+    let limits: Limits = serde_json::from_value(old).unwrap();
+    assert_eq!(limits.cpu_time, None);
+    // ...and limits without one serialize as before.
+    assert!(serde_json::to_value(&limits).unwrap().get("cpu_time").is_none());
+}
+
+#[tokio::test]
 async fn fuel_is_deterministic_and_enforced() {
     let code = "let s = 0; for (let i = 0; i < 100000; i++) s += i; s";
     let a = run(code).await;

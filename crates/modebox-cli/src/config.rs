@@ -212,6 +212,7 @@ pub struct MountConfig {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LimitsConfig {
     pub timeout_ms: Option<u64>,
+    pub cpu_timeout_ms: Option<u64>,
     pub fuel: Option<u64>,
     pub memory_mb: Option<usize>,
     pub max_host_calls: Option<u32>,
@@ -224,6 +225,7 @@ impl LimitsConfig {
         if let Some(ms) = self.timeout_ms {
             l.timeout = Duration::from_millis(ms);
         }
+        l.cpu_time = self.cpu_timeout_ms.map(Duration::from_millis);
         l.fuel = self.fuel;
         if let Some(mb) = self.memory_mb {
             l.memory_bytes = mb << 20;

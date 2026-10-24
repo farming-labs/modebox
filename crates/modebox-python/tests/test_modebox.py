@@ -78,6 +78,12 @@ class ModeboxTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.status, "failed")
         self.assertIsInstance(r.error, RunError)
 
+    async def test_cpu_timeout_stops_busy_code(self):
+        with self.assertRaises(RunError) as c:
+            await modebox.run("while (true) {}", limits=modebox.Limits(cpu_timeout_ms=100, timeout_ms=10_000))
+        self.assertEqual(c.exception.kind, "CpuTimeout")
+        self.assertEqual(c.exception.code, "RUN_CPU_TIMEOUT")
+
     async def test_an_uncaught_error_keeps_its_own_code(self):
         class QuotaError(Exception):
             code = "E_QUOTA"

@@ -213,6 +213,7 @@ function nativeOptions(o = {}, cancelId) {
   return JSON.stringify({
     cancelId,
     timeoutMs: l.timeoutMs,
+    cpuTimeoutMs: l.cpuTimeoutMs,
     fuel: l.fuel,
     memoryLimitBytes: l.memoryLimitBytes,
     maxHostCalls: l.maxHostCalls ?? l.maxBridgeRequests,

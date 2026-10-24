@@ -33,6 +33,10 @@ pub struct Limits {
     /// Deterministic CPU budget in wasm fuel units, cumulative across
     /// resumes. Requires `EngineConfig::metering`.
     pub fuel: Option<u64>,
+    /// Time the script may spend executing in one segment, not counting time
+    /// spent waiting on host calls. `None`: only `timeout` applies.
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "opt_duration_ms")]
+    pub cpu_time: Option<Duration>,
     /// QuickJS heap limit in bytes.
     pub memory_bytes: usize,
     /// Maximum host calls per run (timers excluded), cumulative across resumes.
@@ -50,12 +54,27 @@ impl Default for Limits {
         Limits {
             timeout: Duration::from_secs(30),
             fuel: None,
+            cpu_time: None,
             memory_bytes: 64 << 20,
             max_host_calls: 1000,
             max_concurrency: 32,
             max_value_bytes: 16 << 20,
             max_log_bytes: 1 << 20,
         }
+    }
+}
+
+mod opt_duration_ms {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::time::Duration;
+    pub fn serialize<S: Serializer>(d: &Option<Duration>, s: S) -> Result<S::Ok, S::Error> {
+        match d {
+            Some(d) => s.serialize_some(&(d.as_millis() as u64)),
+            None => s.serialize_none(),
+        }
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Duration>, D::Error> {
+        Ok(Option::<u64>::deserialize(d)?.map(Duration::from_millis))
     }
 }
 
@@ -277,6 +296,8 @@ pub enum ErrorKind {
     /// [`RunOptions::cancel`] was cancelled.
     Aborted,
     CpuLimit,
+    /// The script ran longer than [`Limits::cpu_time`].
+    CpuTimeout,
     MemoryLimit,
     StackOverflow,
     HostCallLimit,
@@ -708,7 +729,15 @@ impl<'a> Driver<'a> {
         if Instant::now() >= self.deadline {
             return Err(self.timeout_error());
         }
-        self.guest.set_deadline(self.deadline);
+        let mut deadline = self.deadline;
+        if let Some(limit) = self.opts.limits.cpu_time {
+            let left = limit.saturating_sub(self.stats.guest);
+            if left.is_zero() {
+                return Err(self.cpu_timeout_error(limit));
+            }
+            deadline = deadline.min(Instant::now() + left);
+        }
+        self.guest.set_deadline(deadline);
         let t = Instant::now();
         let r = match op {
             GuestOp::Start(req) => self.guest.start(&req).await,
@@ -748,7 +777,10 @@ impl<'a> Driver<'a> {
                 format!("run exceeded its CPU budget of {} fuel", self.opts.limits.fuel.unwrap_or(0)),
             ),
             Some(wasmtime::Trap::Interrupt) if self.cancelled() => self.abort_error(),
-            Some(wasmtime::Trap::Interrupt) => self.timeout_error(),
+            Some(wasmtime::Trap::Interrupt) => match self.opts.limits.cpu_time {
+                Some(limit) if self.stats.guest >= limit => self.cpu_timeout_error(limit),
+                _ => self.timeout_error(),
+            },
             Some(wasmtime::Trap::StackOverflow) => {
                 RunError::new(ErrorKind::StackOverflow, "RangeError", "Maximum call stack size exceeded")
             }
@@ -760,6 +792,14 @@ impl<'a> Driver<'a> {
             Some(trap) => RunError::new(ErrorKind::Internal, "SandboxTrap", format!("the sandbox crashed: {trap}")),
             None => RunError::new(ErrorKind::Internal, "SandboxTrap", format!("{:#}", anyhow::Error::from(e))),
         }
+    }
+
+    fn cpu_timeout_error(&self, limit: Duration) -> RunError {
+        RunError::new(
+            ErrorKind::CpuTimeout,
+            "CpuTimeoutError",
+            format!("run exceeded its CPU time limit of {}ms", limit.as_millis()),
+        )
     }
 
     fn call_limit_error(&self) -> RunError {
