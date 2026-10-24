@@ -45,6 +45,18 @@ test('an uncaught error keeps its own code', async () => {
   await assert.rejects(run({ source: 'null.x' }), (e) => e.code === 'RUN_UNCAUGHT');
 });
 
+test('limits must be positive integers', async () => {
+  for (const bad of [0, -1, 1.5, Number.NaN, '10']) {
+    await assert.rejects(run({ source: '1', limits: { timeoutMs: bad } }), {
+      name: 'TypeError',
+      message: 'limits.timeoutMs must be a positive integer.',
+    });
+  }
+  await assert.rejects(run({ source: '1', limits: { maxHostCalls: 2 ** 31 } }), /limits\.maxHostCalls must be at most 2147483647/);
+  assert.throws(() => createRunner({ limits: { memoryLimitBytes: -5 } }), /limits\.memoryLimitBytes must be a positive integer/);
+  assert.equal((await run({ source: '1', limits: { timeoutMs: 1000, fuel: 2 ** 40 } })).value, 1);
+});
+
 test('getHostFunctionContext().interrupt() suspends; resume re-invokes with the resolution', async () => {
   const runner = createRunner({ continuationSecret: 'k'.repeat(32) });
   let calls = 0;

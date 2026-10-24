@@ -195,6 +195,19 @@ function toolSpecs(fns, approve = [], schemas = {}, sources = [], sinks = []) {
   }));
 }
 
+const MAX_LIMIT = 2 ** 31 - 1;
+
+// Limits are positive integers. Anything else used to be dropped silently by
+// the native side (or, for 0, applied literally), so reject it up front.
+function checkLimits(limits) {
+  for (const [name, value] of Object.entries(limits ?? {})) {
+    if (value === undefined) continue;
+    const max = name === 'fuel' ? Number.MAX_SAFE_INTEGER : MAX_LIMIT;
+    if (!Number.isInteger(value) || value <= 0) throw new TypeError(`limits.${name} must be a positive integer.`);
+    if (value > max) throw new TypeError(`limits.${name} must be at most ${max}.`);
+  }
+}
+
 function nativeOptions(o = {}) {
   const l = o.limits ?? {};
   return JSON.stringify({
@@ -280,6 +293,7 @@ export class Runner {
    *   process that resumes the same tokens (default: in memory, so single-use only within this process)
    */
   constructor(config = {}) {
+    checkLimits(config.limits);
     const secret = config.continuationSecret ?? process.env.MODEBOX_SECRET ?? process.env.RUN_CONTINUATION_SECRET;
     this.#engine = native.createEngine(JSON.stringify({
       secret, metering: config.metering, cacheDir: config.cacheDir,
@@ -295,6 +309,7 @@ export class Runner {
    */
   async run(options) {
     const o = { ...this.#defaults, ...options, limits: { ...this.#defaults.limits, ...options.limits } };
+    checkLimits(o.limits);
     const fns = flatten(o.hostFunctions);
     const tools = JSON.stringify(toolSpecs(fns, o.approve, o.schemas, o.sources, o.sinks));
     const dispatch = makeDispatch(fns, o.onCall);

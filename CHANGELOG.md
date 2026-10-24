@@ -11,6 +11,7 @@ Notable changes to modebox. The format follows [Keep a Changelog](https://keepac
 ### Changed
 
 - **A run that fails on an uncaught error with a `code` reports that code.** If a host function throws an error with a `code` (or the script throws one) and nothing catches it, `RunError.code` is now that code, for example `E_QUOTA`, instead of `RUN_UNCAUGHT`. `kind` is still `Uncaught`, and errors without a code are unchanged. Rust's `RunError` has a new `code` field.
+- **Node: limits must be positive integers.** `run()` and `createRunner()` now throw a `TypeError` such as `limits.timeoutMs must be a positive integer.` for a zero, negative, fractional or non-number limit, or one above 2³¹−1. Such values used to be ignored, except `0`, which was applied as written.
 
 ### Fixed
 
