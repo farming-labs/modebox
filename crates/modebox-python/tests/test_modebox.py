@@ -78,6 +78,21 @@ class ModeboxTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.status, "failed")
         self.assertIsInstance(r.error, RunError)
 
+    async def test_an_uncaught_error_keeps_its_own_code(self):
+        class QuotaError(Exception):
+            code = "E_QUOTA"
+
+        def charge():
+            raise QuotaError("quota exceeded")
+
+        with self.assertRaises(RunError) as c:
+            await modebox.run("await billing.charge()", host_functions={"billing": {"charge": charge}})
+        self.assertEqual(c.exception.kind, "Uncaught")
+        self.assertEqual(c.exception.code, "E_QUOTA")
+        with self.assertRaises(RunError) as c:
+            await modebox.run("null.x")
+        self.assertEqual(c.exception.code, "RUN_UNCAUGHT")
+
     async def test_host_function_exceptions_are_catchable_in_the_sandbox(self):
         def boom():
             raise ValueError("bad input")

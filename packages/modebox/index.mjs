@@ -162,7 +162,8 @@ export class RunError extends Error {
     super(e.message);
     this.name = e.name;
     this.kind = e.kind;
-    this.code = 'RUN_' + e.kind.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
+    // The uncaught error's own code when it had one (say, from a host function), else the kind.
+    this.code = e.code ?? 'RUN_' + e.kind.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
     this.sandboxStack = e.stack ?? undefined;
     Object.assign(this, extra);
   }

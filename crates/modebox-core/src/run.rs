@@ -247,11 +247,14 @@ pub struct RunError {
     pub name: String,
     pub message: String,
     pub stack: Option<String>,
+    /// The `code` of the uncaught error, when it had one (for example a
+    /// [`ToolError`] code that the script didn't catch).
+    pub code: Option<String>,
 }
 
 impl RunError {
     fn new(kind: ErrorKind, name: &str, message: impl Into<String>) -> Self {
-        RunError { kind, name: name.into(), message: message.into(), stack: None }
+        RunError { kind, name: name.into(), message: message.into(), stack: None, code: None }
     }
 }
 
@@ -1096,7 +1099,13 @@ fn classify(msg: &Json) -> RunError {
         "TypeError" if message.starts_with("the script's result") => ErrorKind::Unserializable,
         _ => ErrorKind::Uncaught,
     };
-    RunError { kind, name, message, stack: msg["stack"].as_str().map(str::to_owned).filter(|s| !s.is_empty()) }
+    RunError {
+        kind,
+        name,
+        message,
+        stack: msg["stack"].as_str().map(str::to_owned).filter(|s| !s.is_empty()),
+        code: msg["code"].as_str().map(str::to_owned),
+    }
 }
 
 impl Value {

@@ -192,7 +192,7 @@ fn result_json(r: RunResult) -> String {
         Outcome::Completed(v) => json!({ "status": "completed", "value": v.to_tagged(), "logs": logs, "stats": stats }),
         Outcome::Failed(e) => json!({
             "status": "failed",
-            "error": { "kind": format!("{:?}", e.kind), "name": e.name, "message": e.message, "stack": e.stack },
+            "error": { "kind": format!("{:?}", e.kind), "name": e.name, "message": e.message, "stack": e.stack, "code": e.code },
             "logs": logs, "stats": stats,
         }),
         Outcome::Suspended(s) => json!({

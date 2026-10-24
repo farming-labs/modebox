@@ -397,8 +397,9 @@ class RunError(Exception):
         super().__init__(f"{self.name}: {self.message}")
         #: What failed, e.g. ``"Uncaught"``, ``"Timeout"``, ``"InvalidContinuation"``.
         self.kind: str = error["kind"]
-        #: ``kind`` as a constant, e.g. ``"RUN_TIMEOUT"``.
-        self.code = "RUN_" + re.sub(r"([a-z])([A-Z])", r"\1_\2", self.kind).upper()
+        #: The uncaught error's own ``code`` when it had one (say, from a host function),
+        #: else ``kind`` as a constant, e.g. ``"RUN_TIMEOUT"``.
+        self.code = error.get("code") or "RUN_" + re.sub(r"([a-z])([A-Z])", r"\1_\2", self.kind).upper()
         self.sandbox_stack: str | None = error.get("stack")
         self.logs = logs
         self.stats = stats

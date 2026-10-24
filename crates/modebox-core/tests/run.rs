@@ -531,6 +531,21 @@ async fn parallel_approvals_suspend_together() {
 }
 
 #[tokio::test]
+async fn an_uncaught_tool_error_keeps_its_code() {
+    let mut tools = Toolbox::new();
+    tools.func("billing.charge", |_c: Call| async move {
+        Err::<Value, _>(ToolError::new("quota exceeded").with_code("E_QUOTA"))
+    });
+    let r = engine().run("await billing.charge()", &tools, opts()).await;
+    let e = err(&r);
+    assert_eq!(e.kind, ErrorKind::Uncaught);
+    assert_eq!(e.message, "quota exceeded");
+    assert_eq!(e.code.as_deref(), Some("E_QUOTA"));
+    let r = engine().run("throw new Error('plain')", &tools, opts()).await;
+    assert_eq!(err(&r).code, None);
+}
+
+#[tokio::test]
 async fn tool_raised_interrupts_resume_with_a_value() {
     let mut tools = Toolbox::new();
     tools.func("auth.token", |c: Call| async move {

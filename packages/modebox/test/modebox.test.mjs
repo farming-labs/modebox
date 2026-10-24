@@ -32,6 +32,19 @@ test('failures throw RunError with kind and code', async () => {
   await assert.rejects(run({ source: 'while(true){}', limits: { timeoutMs: 100 } }), (e) => e.code === 'RUN_TIMEOUT');
 });
 
+test('an uncaught error keeps its own code', async () => {
+  const charge = () => {
+    const e = new Error('quota exceeded');
+    e.code = 'E_QUOTA';
+    throw e;
+  };
+  await assert.rejects(
+    run({ source: 'await billing.charge()', hostFunctions: { billing: { charge } } }),
+    (e) => e instanceof RunError && e.kind === 'Uncaught' && e.code === 'E_QUOTA' && e.message === 'quota exceeded',
+  );
+  await assert.rejects(run({ source: 'null.x' }), (e) => e.code === 'RUN_UNCAUGHT');
+});
+
 test('getHostFunctionContext().interrupt() suspends; resume re-invokes with the resolution', async () => {
   const runner = createRunner({ continuationSecret: 'k'.repeat(32) });
   let calls = 0;
