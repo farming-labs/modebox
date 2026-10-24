@@ -48,7 +48,7 @@ pub use continuations::{ContinuationStore, MemoryContinuations, StoreContinuatio
 pub use dts::declarations;
 pub use engine::{Engine, EngineConfig};
 pub use run::{
-    ClockMode, ContinuationInfo, ErrorKind, Event, EventSink, Interrupt, Limits, LogEntry, Mode, Outcome, Resolution,
+    Cancel, ClockMode, ContinuationInfo, ErrorKind, Event, EventSink, Interrupt, Limits, LogEntry, Mode, Outcome, Resolution,
     RunError, RunOptions, RunResult, Stats, Suspension,
 };
 pub use session::Session;

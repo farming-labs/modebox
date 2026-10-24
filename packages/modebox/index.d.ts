@@ -3,6 +3,8 @@ export interface HostFunctions { [name: string]: HostFunction | HostFunctions }
 
 export interface Limits {
   timeoutMs?: number;
+  /** Time the script may spend executing, not counting waits on host calls (fresh on each resume). */
+  cpuTimeoutMs?: number;
   /** Deterministic CPU budget in wasm fuel units (cumulative across resumes). */
   fuel?: number;
   memoryLimitBytes?: number;
@@ -46,6 +48,8 @@ export interface RunOptions {
   onCall?: (name: string, id: number) => void;
   /** Return `{ status: 'failed', error }` instead of throwing. */
   throwOnError?: boolean;
+  /** Aborting it stops the run (also mid-computation): it fails with code `RUN_ABORTED`. */
+  abortSignal?: AbortSignal;
 }
 
 export interface LogEntry { level: string; message: string }
@@ -69,11 +73,17 @@ export declare class RunError extends Error {
 export interface HostFunctionContext {
   callId: number;
   hostFunctionName: string;
-  resume?: { resolution: unknown };
+  /** Fires when the run is aborted or fails, so work started for it can stop. */
+  abortSignal: AbortSignal;
+  /** Set when the call runs again after `interrupt()`: the resolution, and the payload it interrupted with. */
+  resume?: { interruptionId: number; resolution: unknown; payload: unknown };
   interrupt(payload?: { kind?: string; [k: string]: unknown }): never;
 }
 
 export declare function getHostFunctionContext(): HostFunctionContext;
+
+/** Thrown by `interrupt()`. Rethrow it if you catch it, or the interrupt is cancelled. */
+export declare class HostFunctionInterruptSignal extends Error {}
 export declare function requireApproval<F extends HostFunction>(fn: F): F;
 
 export interface RunnerConfig {

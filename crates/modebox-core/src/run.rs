@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use futures::FutureExt;
@@ -32,6 +33,10 @@ pub struct Limits {
     /// Deterministic CPU budget in wasm fuel units, cumulative across
     /// resumes. Requires `EngineConfig::metering`.
     pub fuel: Option<u64>,
+    /// Time the script may spend executing in one segment, not counting time
+    /// spent waiting on host calls. `None`: only `timeout` applies.
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "opt_duration_ms")]
+    pub cpu_time: Option<Duration>,
     /// QuickJS heap limit in bytes.
     pub memory_bytes: usize,
     /// Maximum host calls per run (timers excluded), cumulative across resumes.
@@ -49,12 +54,27 @@ impl Default for Limits {
         Limits {
             timeout: Duration::from_secs(30),
             fuel: None,
+            cpu_time: None,
             memory_bytes: 64 << 20,
             max_host_calls: 1000,
             max_concurrency: 32,
             max_value_bytes: 16 << 20,
             max_log_bytes: 1 << 20,
         }
+    }
+}
+
+mod opt_duration_ms {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::time::Duration;
+    pub fn serialize<S: Serializer>(d: &Option<Duration>, s: S) -> Result<S::Ok, S::Error> {
+        match d {
+            Some(d) => s.serialize_some(&(d.as_millis() as u64)),
+            None => s.serialize_none(),
+        }
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Duration>, D::Error> {
+        Ok(Option::<u64>::deserialize(d)?.map(Duration::from_millis))
     }
 }
 
@@ -123,6 +143,47 @@ pub struct RunOptions {
     pub clock: ClockMode,
     /// Streaming callback for logs and tool-call progress.
     pub on_event: Option<EventSink>,
+    /// Stops the run when cancelled; see [`Cancel`].
+    pub cancel: Option<Cancel>,
+}
+
+/// Stops a run from elsewhere. Pass a clone in [`RunOptions::cancel`] and call
+/// [`Cancel::cancel`]: the run fails with [`ErrorKind::Aborted`] within a few
+/// milliseconds, whether the script is computing or waiting on host calls, and
+/// calls still in flight are dropped.
+#[derive(Clone, Debug, Default)]
+pub struct Cancel(Arc<CancelState>);
+
+#[derive(Debug, Default)]
+struct CancelState {
+    cancelled: AtomicBool,
+    notify: tokio::sync::Notify,
+}
+
+impl Cancel {
+    pub fn new() -> Self {
+        Cancel::default()
+    }
+
+    pub fn cancel(&self) {
+        self.0.cancelled.store(true, Ordering::SeqCst);
+        self.0.notify.notify_waiters();
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.0.cancelled.load(Ordering::SeqCst)
+    }
+
+    async fn cancelled(&self) {
+        loop {
+            // Created before the check, so a cancel in between still wakes it.
+            let notified = self.0.notify.notified();
+            if self.is_cancelled() {
+                return;
+            }
+            notified.await;
+        }
+    }
 }
 
 impl Default for RunOptions {
@@ -135,6 +196,7 @@ impl Default for RunOptions {
             seed: None,
             clock: ClockMode::Real,
             on_event: None,
+            cancel: None,
         }
     }
 }
@@ -231,7 +293,11 @@ pub enum ErrorKind {
     /// The script awaited something that can never settle.
     Deadlock,
     Timeout,
+    /// [`RunOptions::cancel`] was cancelled.
+    Aborted,
     CpuLimit,
+    /// The script ran longer than [`Limits::cpu_time`].
+    CpuTimeout,
     MemoryLimit,
     StackOverflow,
     HostCallLimit,
@@ -247,11 +313,14 @@ pub struct RunError {
     pub name: String,
     pub message: String,
     pub stack: Option<String>,
+    /// The `code` of the uncaught error, when it had one (for example a
+    /// [`ToolError`] code that the script didn't catch).
+    pub code: Option<String>,
 }
 
 impl RunError {
     fn new(kind: ErrorKind, name: &str, message: impl Into<String>) -> Self {
-        RunError { kind, name: name.into(), message: message.into(), stack: None }
+        RunError { kind, name: name.into(), message: message.into(), stack: None, code: None }
     }
 }
 
@@ -592,6 +661,8 @@ impl<'a> Driver<'a> {
         started: Instant,
     ) -> Self {
         let deadline = started + opts.limits.timeout;
+        let mut guest = guest;
+        guest.store.data_mut().cancel = opts.cancel.clone();
         Driver {
             engine,
             tools,
@@ -651,10 +722,22 @@ impl<'a> Driver<'a> {
     /// Call into the guest with the wall-clock deadline armed, mapping traps
     /// to run errors.
     async fn guest_call(&mut self, op: GuestOp) -> Result<u32, RunError> {
+        if self.cancelled() {
+            self.stats.aborted = true;
+            return Err(self.abort_error());
+        }
         if Instant::now() >= self.deadline {
             return Err(self.timeout_error());
         }
-        self.guest.set_deadline(self.deadline);
+        let mut deadline = self.deadline;
+        if let Some(limit) = self.opts.limits.cpu_time {
+            let left = limit.saturating_sub(self.stats.guest);
+            if left.is_zero() {
+                return Err(self.cpu_timeout_error(limit));
+            }
+            deadline = deadline.min(Instant::now() + left);
+        }
+        self.guest.set_deadline(deadline);
         let t = Instant::now();
         let r = match op {
             GuestOp::Start(req) => self.guest.start(&req).await,
@@ -665,6 +748,14 @@ impl<'a> Driver<'a> {
             self.stats.aborted = true;
             self.trap_error(e)
         })
+    }
+
+    fn cancelled(&self) -> bool {
+        self.opts.cancel.as_ref().is_some_and(Cancel::is_cancelled)
+    }
+
+    fn abort_error(&self) -> RunError {
+        RunError::new(ErrorKind::Aborted, "AbortError", "the run was aborted")
     }
 
     fn timeout_error(&self) -> RunError {
@@ -685,7 +776,11 @@ impl<'a> Driver<'a> {
                 "CpuLimitError",
                 format!("run exceeded its CPU budget of {} fuel", self.opts.limits.fuel.unwrap_or(0)),
             ),
-            Some(wasmtime::Trap::Interrupt) => self.timeout_error(),
+            Some(wasmtime::Trap::Interrupt) if self.cancelled() => self.abort_error(),
+            Some(wasmtime::Trap::Interrupt) => match self.opts.limits.cpu_time {
+                Some(limit) if self.stats.guest >= limit => self.cpu_timeout_error(limit),
+                _ => self.timeout_error(),
+            },
             Some(wasmtime::Trap::StackOverflow) => {
                 RunError::new(ErrorKind::StackOverflow, "RangeError", "Maximum call stack size exceeded")
             }
@@ -697,6 +792,14 @@ impl<'a> Driver<'a> {
             Some(trap) => RunError::new(ErrorKind::Internal, "SandboxTrap", format!("the sandbox crashed: {trap}")),
             None => RunError::new(ErrorKind::Internal, "SandboxTrap", format!("{:#}", anyhow::Error::from(e))),
         }
+    }
+
+    fn cpu_timeout_error(&self, limit: Duration) -> RunError {
+        RunError::new(
+            ErrorKind::CpuTimeout,
+            "CpuTimeoutError",
+            format!("run exceeded its CPU time limit of {}ms", limit.as_millis()),
+        )
     }
 
     fn call_limit_error(&self) -> RunError {
@@ -847,6 +950,7 @@ impl<'a> Driver<'a> {
             id: call.id,
             run_id: self.run_id.clone(),
             resume: None,
+            interrupt_payload: None,
         };
         if let Some(reason) = tool.needs_approval(&probe).or_else(|| self.flow_check(tool)) {
             call.kind = Some("approval".into());
@@ -904,13 +1008,9 @@ impl<'a> Driver<'a> {
         }
         let args = call.args();
         self.emit_event(Event::CallStarted { id: call.id, tool: call.name.clone(), args: args.clone() });
-        let c = Call {
-            name: call.name.clone(),
-            args,
-            id: call.id,
-            run_id: self.run_id.clone(),
-            resume: call.resume.as_ref().map(Value::from_tagged),
-        };
+        let resume = call.resume.as_ref().map(Value::from_tagged);
+        let interrupt_payload = resume.as_ref().and(call.payload.as_ref()).map(Value::from_tagged);
+        let c = Call { name: call.name.clone(), args, id: call.id, run_id: self.run_id.clone(), resume, interrupt_payload };
         let handle = tokio::spawn(tool.handler.call(c));
         self.aborts.push(handle.abort_handle());
         let id = call.id;
@@ -1004,6 +1104,13 @@ impl<'a> Driver<'a> {
         let has_timer = timer_wait.is_some();
         let timer_sleep = tokio::time::sleep(timer_wait.unwrap_or(Duration::from_secs(3600)));
         let has_inflight = !self.inflight.is_empty();
+        let cancel = self.opts.cancel.clone();
+        let cancelled = async move {
+            match cancel {
+                Some(c) => c.cancelled().await,
+                None => std::future::pending().await,
+            }
+        };
         tokio::select! {
             Some((id, r)) = self.inflight.next(), if has_inflight => {
                 self.complete(id, r);
@@ -1016,6 +1123,11 @@ impl<'a> Driver<'a> {
             }
             _ = tokio::time::sleep_until(self.deadline.into()) => {
                 return Err(self.timeout_error());
+            }
+            _ = cancelled => {
+                // The VM still holds the calls it was waiting on.
+                self.stats.aborted = true;
+                return Err(self.abort_error());
             }
         }
         Ok(())
@@ -1099,7 +1211,13 @@ fn classify(msg: &Json) -> RunError {
         "TypeError" if message.starts_with("the script's result") => ErrorKind::Unserializable,
         _ => ErrorKind::Uncaught,
     };
-    RunError { kind, name, message, stack: msg["stack"].as_str().map(str::to_owned).filter(|s| !s.is_empty()) }
+    RunError {
+        kind,
+        name,
+        message,
+        stack: msg["stack"].as_str().map(str::to_owned).filter(|s| !s.is_empty()),
+        code: msg["code"].as_str().map(str::to_owned),
+    }
 }
 
 impl Value {

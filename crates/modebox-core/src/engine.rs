@@ -20,6 +20,7 @@ use wasmtime::{
 };
 
 use crate::continuations::{ContinuationStore, MemoryContinuations};
+use crate::run::Cancel;
 use crate::snapshot::{MemDiff, Sealer};
 
 static GUEST_WASM: &[u8] = include_bytes!("../guest/modebox_guest.wasm");
@@ -294,6 +295,8 @@ pub(crate) struct HostState {
     pub events: Vec<GuestEvent>,
     /// Wall-clock deadline for the current guest call.
     pub deadline: Instant,
+    /// Traps the guest when cancelled, like a passed deadline.
+    pub cancel: Option<Cancel>,
     pub memory: Option<Memory>,
     limits: StoreLimits,
     pub clock: Clock,
@@ -312,6 +315,7 @@ impl HostState {
         HostState {
             events: Vec::new(),
             deadline: Instant::now() + Duration::from_secs(3600),
+            cancel: None,
             memory: None,
             limits: StoreLimitsBuilder::new().memory_size(max_memory).instances(1).build(),
             clock,
@@ -388,7 +392,8 @@ impl Guest {
         // Every ~10ms it yields to the async executor so long CPU-bound scripts
         // don't starve other tasks, and traps once the wall-clock deadline passes.
         store.epoch_deadline_callback(|ctx| {
-            if Instant::now() >= ctx.data().deadline {
+            let st = ctx.data();
+            if Instant::now() >= st.deadline || st.cancel.as_ref().is_some_and(Cancel::is_cancelled) {
                 return Err(wasmtime::Trap::Interrupt.into());
             }
             Ok(wasmtime::UpdateDeadline::Yield(10))

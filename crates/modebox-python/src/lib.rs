@@ -108,12 +108,15 @@ fn toolbox(tools: &str, dispatch: Arc<Dispatch>) -> PyResult<Toolbox> {
 }
 
 async fn dispatch_call(d: &Dispatch, call: Call) -> Result<Value, ToolError> {
-    let msg = json!({
+    let mut msg = json!({
         "name": call.name,
         "id": call.id,
         "args": Value::Array(call.args.clone()).to_tagged(),
         "resume": call.resume.as_ref().map(Value::to_tagged),
     });
+    if let Some(payload) = &call.interrupt_payload {
+        msg["payload"] = payload.to_tagged();
+    }
     let fail = |e: PyErr| ToolError::new(format!("host dispatch failed: {e}"));
     // Start the coroutine on the caller's event loop, then wait for it here.
     let reply = Python::attach(|py| {
@@ -140,7 +143,7 @@ async fn dispatch_call(d: &Dispatch, call: Call) -> Result<Value, ToolError> {
     Err(te)
 }
 
-/// `options`: `{ timeoutMs?, fuel?, memoryLimitBytes?, maxHostCalls?, maxConcurrency?, maxValueBytes?, maxLogBytes?, seed?: hex, virtualTimeMs?, mode?, filename?, typescript? }`.
+/// `options`: `{ timeoutMs?, cpuTimeoutMs?, fuel?, memoryLimitBytes?, maxHostCalls?, maxConcurrency?, maxValueBytes?, maxLogBytes?, seed?: hex, virtualTimeMs?, mode?, filename?, typescript? }`.
 fn run_options(options: &str) -> PyResult<RunOptions> {
     let o: Json = serde_json::from_str(options).map_err(err)?;
     let mut l = Limits::default();
@@ -148,6 +151,9 @@ fn run_options(options: &str) -> PyResult<RunOptions> {
         l.timeout = Duration::from_millis(ms);
     }
     l.fuel = o["fuel"].as_u64();
+    if let Some(ms) = o["cpuTimeoutMs"].as_u64() {
+        l.cpu_time = Some(Duration::from_millis(ms));
+    }
     if let Some(n) = o["memoryLimitBytes"].as_u64() {
         l.memory_bytes = n as usize;
     }
@@ -201,7 +207,7 @@ fn result_json(r: RunResult) -> String {
         Outcome::Completed(v) => json!({ "status": "completed", "value": v.to_tagged(), "logs": logs, "stats": stats }),
         Outcome::Failed(e) => json!({
             "status": "failed",
-            "error": { "kind": format!("{:?}", e.kind), "name": e.name, "message": e.message, "stack": e.stack },
+            "error": { "kind": format!("{:?}", e.kind), "name": e.name, "message": e.message, "stack": e.stack, "code": e.code },
             "logs": logs, "stats": stats,
         }),
         Outcome::Suspended(s) => json!({

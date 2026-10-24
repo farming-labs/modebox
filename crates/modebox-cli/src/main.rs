@@ -220,7 +220,7 @@ async fn real_main() -> Result<()> {
             policy.timeout = Duration::from_millis(timeout_ms);
             policy.max_output_bytes = 16 << 20;
             let tool = shell_tool("sh", policy);
-            let call = Call { name: "sh".into(), args: vec![Value::from(command.join(" "))], id: 0, run_id: "cli".into(), resume: None };
+            let call = Call { name: "sh".into(), args: vec![Value::from(command.join(" "))], id: 0, run_id: "cli".into(), resume: None, interrupt_payload: None };
             let out = tool.invoke(call).await.map_err(|e| anyhow::anyhow!("{e}"))?;
             print!("{}", out.get("stdout").and_then(Value::as_str).unwrap_or(""));
             eprint!("{}", out.get("stderr").and_then(Value::as_str).unwrap_or(""));

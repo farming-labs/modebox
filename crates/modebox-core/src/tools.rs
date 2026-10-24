@@ -25,6 +25,9 @@ pub struct Call {
     /// Set when this call is being re-invoked after an interrupt was resolved
     /// with [`crate::Resolution::ResumeWith`].
     pub resume: Option<Value>,
+    /// With [`Call::resume`]: the payload this call interrupted with, so the
+    /// tool knows which question the resolution answers.
+    pub interrupt_payload: Option<Value>,
 }
 
 impl Call {

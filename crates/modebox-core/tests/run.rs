@@ -316,6 +316,79 @@ async fn timeout_also_covers_slow_tools() {
     assert_eq!(err(&r).kind, ErrorKind::Timeout);
 }
 
+fn cancel_after(ms: u64) -> Cancel {
+    let cancel = Cancel::new();
+    let c = cancel.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(ms)).await;
+        c.cancel();
+    });
+    cancel
+}
+
+#[tokio::test]
+async fn cancel_stops_a_busy_run() {
+    let start = Instant::now();
+    let o = RunOptions { cancel: Some(cancel_after(100)), ..opts() };
+    let r = engine().run("while (true) {}", &math(), o).await;
+    assert_eq!(err(&r).kind, ErrorKind::Aborted);
+    assert!(r.stats.aborted);
+    assert!(start.elapsed() < Duration::from_millis(600), "took {:?}", start.elapsed());
+}
+
+#[tokio::test]
+async fn cancel_stops_a_run_waiting_on_a_tool() {
+    let mut t = Toolbox::new();
+    t.func("hang", |_c: Call| async move {
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        Ok(Value::Null)
+    });
+    let start = Instant::now();
+    let o = RunOptions { cancel: Some(cancel_after(100)), ..opts() };
+    let r = engine().run("await hang()", &t, o).await;
+    assert_eq!(err(&r).kind, ErrorKind::Aborted);
+    assert!(start.elapsed() < Duration::from_millis(600), "took {:?}", start.elapsed());
+}
+
+#[tokio::test]
+async fn a_cancelled_run_does_not_start() {
+    let cancel = Cancel::new();
+    cancel.cancel();
+    let r = engine().run("1", &math(), RunOptions { cancel: Some(cancel), ..opts() }).await;
+    assert_eq!(err(&r).kind, ErrorKind::Aborted);
+}
+
+#[tokio::test]
+async fn cpu_time_limit_counts_only_time_spent_executing() {
+    let mut o = opts();
+    o.limits.cpu_time = Some(Duration::from_millis(100));
+    let start = Instant::now();
+    let r = engine().run("while (true) {}", &math(), o.clone()).await;
+    assert_eq!(err(&r).kind, ErrorKind::CpuTimeout);
+    assert!(start.elapsed() < Duration::from_millis(600), "took {:?}", start.elapsed());
+
+    // Waiting on host calls doesn't count against it.
+    let mut t = Toolbox::new();
+    t.func("nap", |_c: Call| async move {
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        Ok(Value::from(1))
+    });
+    let r = engine().run("await nap(); await nap(); 'ok'", &t, o).await;
+    assert_eq!(ok(&r), &Value::from("ok"));
+}
+
+#[test]
+fn limits_sealed_without_a_cpu_time_still_load() {
+    let old = serde_json::json!({
+        "timeout": 30000, "fuel": null, "memory_bytes": 67108864, "max_host_calls": 1000,
+        "max_concurrency": 32, "max_value_bytes": 16777216, "max_log_bytes": 1048576,
+    });
+    let limits: Limits = serde_json::from_value(old).unwrap();
+    assert_eq!(limits.cpu_time, None);
+    // ...and limits without one serialize as before.
+    assert!(serde_json::to_value(&limits).unwrap().get("cpu_time").is_none());
+}
+
 #[tokio::test]
 async fn fuel_is_deterministic_and_enforced() {
     let code = "let s = 0; for (let i = 0; i < 100000; i++) s += i; s";
@@ -531,12 +604,31 @@ async fn parallel_approvals_suspend_together() {
 }
 
 #[tokio::test]
+async fn an_uncaught_tool_error_keeps_its_code() {
+    let mut tools = Toolbox::new();
+    tools.func("billing.charge", |_c: Call| async move {
+        Err::<Value, _>(ToolError::new("quota exceeded").with_code("E_QUOTA"))
+    });
+    let r = engine().run("await billing.charge()", &tools, opts()).await;
+    let e = err(&r);
+    assert_eq!(e.kind, ErrorKind::Uncaught);
+    assert_eq!(e.message, "quota exceeded");
+    assert_eq!(e.code.as_deref(), Some("E_QUOTA"));
+    let r = engine().run("throw new Error('plain')", &tools, opts()).await;
+    assert_eq!(err(&r).code, None);
+}
+
+#[tokio::test]
 async fn tool_raised_interrupts_resume_with_a_value() {
     let mut tools = Toolbox::new();
     tools.func("auth.token", |c: Call| async move {
         match &c.resume {
             None => Err(c.interrupt("sign_in", Value::object([("url", Value::from("https://example.test/login"))]))),
-            Some(code) => Ok(Value::from(format!("token-for-{}", code.as_str().unwrap_or("?")))),
+            Some(code) => {
+                // The tool also gets back the payload it interrupted with.
+                let url = c.interrupt_payload.as_ref().and_then(|p| p.get("url")).and_then(Value::as_str).unwrap_or("?");
+                Ok(Value::from(format!("token-for-{}@{url}", code.as_str().unwrap_or("?"))))
+            }
         }
     });
     let first = engine().run("const t = await auth.token(); t.toUpperCase()", &tools, opts()).await;
@@ -546,7 +638,7 @@ async fn tool_raised_interrupts_resume_with_a_value() {
     let r = engine()
         .resume(&s.continuation, [(s.interrupts[0].id, Resolution::ResumeWith(Value::from("abc")))], &tools, opts())
         .await;
-    assert_eq!(ok(&r), &Value::from("TOKEN-FOR-ABC"));
+    assert_eq!(ok(&r), &Value::from("TOKEN-FOR-ABC@HTTPS://EXAMPLE.TEST/LOGIN"));
 }
 
 #[tokio::test]
