@@ -4,7 +4,7 @@ Notable changes to modebox. The format follows [Keep a Changelog](https://keepac
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-10-23
+## [0.2.0] - 2026-10-24
 
 ### Added
 
