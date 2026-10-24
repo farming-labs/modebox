@@ -44,7 +44,7 @@ impl Engine {
 
     /// Restore a session sealed with [`Session::save`].
     pub async fn restore_session(&self, token: &str, tools: Toolbox, opts: RunOptions) -> Result<Session, RunError> {
-        let invalid = |m: String| RunError { kind: ErrorKind::InvalidContinuation, name: "SessionError".into(), message: m, stack: None };
+        let invalid = |m: String| RunError { kind: ErrorKind::InvalidContinuation, name: "SessionError".into(), message: m, stack: None, code: None };
         let inner = &self.inner;
         let blob = inner.sealer.open(token).map_err(invalid)?;
         let (h, diff): (SessionHeader, snapshot::MemDiff) = snapshot::unpack(&blob).map_err(invalid)?;
@@ -99,7 +99,7 @@ impl Session {
                 match Guest::new(inner, clock_of(&self.opts), cap).await {
                     Ok(g) => g,
                     Err(e) => return crate::run::fail(RunError {
-                        kind: ErrorKind::Internal, name: "ModeboxError".into(), message: format!("{e:#}"), stack: None,
+                        kind: ErrorKind::Internal, name: "ModeboxError".into(), message: format!("{e:#}"), stack: None, code: None,
                     }),
                 }
             }

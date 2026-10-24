@@ -78,6 +78,27 @@ class ModeboxTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.status, "failed")
         self.assertIsInstance(r.error, RunError)
 
+    async def test_cpu_timeout_stops_busy_code(self):
+        with self.assertRaises(RunError) as c:
+            await modebox.run("while (true) {}", limits=modebox.Limits(cpu_timeout_ms=100, timeout_ms=10_000))
+        self.assertEqual(c.exception.kind, "CpuTimeout")
+        self.assertEqual(c.exception.code, "RUN_CPU_TIMEOUT")
+
+    async def test_an_uncaught_error_keeps_its_own_code(self):
+        class QuotaError(Exception):
+            code = "E_QUOTA"
+
+        def charge():
+            raise QuotaError("quota exceeded")
+
+        with self.assertRaises(RunError) as c:
+            await modebox.run("await billing.charge()", host_functions={"billing": {"charge": charge}})
+        self.assertEqual(c.exception.kind, "Uncaught")
+        self.assertEqual(c.exception.code, "E_QUOTA")
+        with self.assertRaises(RunError) as c:
+            await modebox.run("null.x")
+        self.assertEqual(c.exception.code, "RUN_UNCAUGHT")
+
     async def test_host_function_exceptions_are_catchable_in_the_sandbox(self):
         def boom():
             raise ValueError("bad input")
@@ -95,7 +116,7 @@ class ModeboxTest(unittest.IsolatedAsyncioTestCase):
             ctx = get_host_function_context()
             if ctx.resume is None:
                 ctx.interrupt({"kind": "sign_in", "url": "https://example.test"})
-            return f"token:{ctx.resume.resolution}"
+            return f"token:{ctx.resume.resolution}:{ctx.resume.payload['url']}"
 
         host_functions = {"auth": {"login": login}}
         a = await runner.run("const r = Math.random(); const t = await auth.login(); [t, r]", host_functions=host_functions)
@@ -104,7 +125,7 @@ class ModeboxTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(a.interruptions[0].payload["url"], "https://example.test")
         resolutions = [modebox.resume_with(a.interruptions[0].id, "abc")]
         b = await runner.run(host_functions=host_functions, continuation=a.continuation, resolutions=resolutions)
-        self.assertEqual(b.value[0], "token:abc")
+        self.assertEqual(b.value[0], "token:abc:https://example.test")
         self.assertEqual(calls, 2)
         # single-use
         with self.assertRaises(RunError) as c:

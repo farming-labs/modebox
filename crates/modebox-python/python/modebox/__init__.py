@@ -253,9 +253,11 @@ def _error_message(e: BaseException) -> str:
 
 @dataclass(frozen=True)
 class Resume:
-    """How an interrupted call was resolved: the ``value`` passed with ``resume_with``."""
+    """How an interrupted call was resolved: the ``value`` passed with ``resume_with``,
+    and the ``payload`` the call interrupted with."""
 
     resolution: Any
+    payload: Any = None
 
 
 class _Interrupt(BaseException):
@@ -313,6 +315,8 @@ def require_approval(fn: Callable[..., Any]) -> Callable[..., Any]:
 @dataclass(frozen=True)
 class Limits:
     timeout_ms: int | None = None
+    #: Time the script may spend executing, not counting waits on host calls (fresh on each resume).
+    cpu_timeout_ms: int | None = None
     #: Deterministic CPU budget in wasm fuel units (cumulative across resumes).
     fuel: int | None = None
     memory_limit_bytes: int | None = None
@@ -395,8 +399,9 @@ class RunError(Exception):
         super().__init__(f"{self.name}: {self.message}")
         #: What failed, e.g. ``"Uncaught"``, ``"Timeout"``, ``"InvalidContinuation"``.
         self.kind: str = error["kind"]
-        #: ``kind`` as a constant, e.g. ``"RUN_TIMEOUT"``.
-        self.code = "RUN_" + re.sub(r"([a-z])([A-Z])", r"\1_\2", self.kind).upper()
+        #: The uncaught error's own ``code`` when it had one (say, from a host function),
+        #: else ``kind`` as a constant, e.g. ``"RUN_TIMEOUT"``.
+        self.code = error.get("code") or "RUN_" + re.sub(r"([a-z])([A-Z])", r"\1_\2", self.kind).upper()
         self.sandbox_stack: str | None = error.get("stack")
         self.logs = logs
         self.stats = stats
@@ -495,6 +500,7 @@ def _native_options(limits: dict[str, int], seed: Any, virtual_time: Any, mode: 
         virtual_time = None
     o = {
         "timeoutMs": limits.get("timeout_ms"),
+        "cpuTimeoutMs": limits.get("cpu_timeout_ms"),
         "fuel": limits.get("fuel"),
         "memoryLimitBytes": limits.get("memory_limit_bytes"),
         "maxHostCalls": limits.get("max_host_calls"),
@@ -526,7 +532,8 @@ def _make_dispatch(fns: Mapping[str, Callable[..., Any]], on_call: Callable[[str
         m = json.loads(msg)
         name, call_id = m["name"], m["id"]
         resume = m.get("resume")
-        ctx = HostFunctionContext(call_id, name, None if resume is None else Resume(_decode(resume)))
+        payload = _decode(m["payload"]) if "payload" in m else None
+        ctx = HostFunctionContext(call_id, name, None if resume is None else Resume(_decode(resume), payload))
         token = _current.set(ctx)
         try:
             if on_call is not None:

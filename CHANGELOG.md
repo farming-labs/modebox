@@ -4,6 +4,22 @@ Notable changes to modebox. The format follows [Keep a Changelog](https://keepac
 
 ## [Unreleased]
 
+### Added
+
+- **A resumed host function sees the payload it interrupted with.** When a call runs again after `interrupt()`, its resume context carries the original payload next to the resolution: `resume.payload` in Node and Python, and `Call::interrupt_payload` in Rust. A host function that raises several kinds of interrupt no longer has to keep its own record of which question it asked. Node's `resume` also has the `interruptionId` it answers.
+- **Cancel a run.** Node's `run()` takes an `abortSignal`: aborting it stops the run within a few milliseconds, whether the script is computing or waiting on host calls, and it fails with kind `Aborted` and code `RUN_ABORTED`. Host functions get `getHostFunctionContext().abortSignal`, which fires when the run is aborted or fails, so work they started can stop. In Rust, pass a `Cancel` in `RunOptions::cancel`.
+- **A CPU time limit in milliseconds.** `cpuTimeoutMs` (Node and `modebox.json`), `cpu_timeout_ms` (Python) and `Limits::cpu_time` (Rust) cap the time the script spends executing, not counting time spent waiting on host calls. Each resume gets a fresh budget. A run that exceeds it fails with kind `CpuTimeout` and code `RUN_CPU_TIMEOUT`. Unlike `fuel`, it isn't deterministic, but it's set in milliseconds and needs no metering.
+- **`modebox/run`: the API of Vercel's `run` package.** `run`, `createRunner`, `getHostFunctionContext`, `createSignedContinuationCodec`, `setMaxWorkers` and the `RunError` classes take the same inputs and return the same shapes, so code written against `run`, such as `@ai-sdk/code-mode`, can use modebox as its runtime. `@ai-sdk/code-mode`'s test suite passes with it. See [docs/run-compat.md](docs/run-compat.md) for the differences.
+
+### Changed
+
+- **A run that fails on an uncaught error with a `code` reports that code.** If a host function throws an error with a `code` (or the script throws one) and nothing catches it, `RunError.code` is now that code, for example `E_QUOTA`, instead of `RUN_UNCAUGHT`. `kind` is still `Uncaught`, and errors without a code are unchanged. Rust's `RunError` has a new `code` field.
+- **Node: limits must be positive integers.** `run()` and `createRunner()` now throw a `TypeError` such as `limits.timeoutMs must be a positive integer.` for a zero, negative, fractional or non-number limit, or one above 2³¹−1. Such values used to be ignored, except `0`, which was applied as written.
+
+### Fixed
+
+- **Node: `interrupt()` survives host code that catches errors.** It used to throw a symbol, so a host function wrapped in a `try`/`catch` that rethrows only `Error`s swallowed the interrupt and returned normally. It now throws a `HostFunctionInterruptSignal` (an `Error`), which such wrappers pass through.
+
 ### Security
 
 - Updated wasmtime to 49.0.4, rustls-webpki to 0.103.16, webpki-root-certs to 1.0.11 and tokio to 1.54.1, for [RUSTSEC-2026-0378](https://rustsec.org/advisories/RUSTSEC-2026-0378), [0379](https://rustsec.org/advisories/RUSTSEC-2026-0379), [0382](https://rustsec.org/advisories/RUSTSEC-2026-0382), [0383](https://rustsec.org/advisories/RUSTSEC-2026-0383) and [0386](https://rustsec.org/advisories/RUSTSEC-2026-0386). The one that applies most directly is 0379: on aarch64, which includes Apple Silicon, Cranelift could compile a large `br_table` to jump to the wrong target. The certificate fixes cover `fetch()` and the S3, GCS and Azure stores. 0378 is in the component model and 0386 in tokio's `AsyncFd`, neither of which modebox uses directly.

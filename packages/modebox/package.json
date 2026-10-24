@@ -17,11 +17,17 @@
     ".": {
       "types": "./index.d.ts",
       "default": "./index.mjs"
+    },
+    "./run": {
+      "types": "./run.d.ts",
+      "default": "./run.mjs"
     }
   },
   "files": [
     "index.mjs",
-    "index.d.ts"
+    "index.d.ts",
+    "run.mjs",
+    "run.d.ts"
   ],
   "engines": {
     "node": ">=18"

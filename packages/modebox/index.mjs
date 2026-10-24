@@ -130,8 +130,19 @@ function decode(j) {
 // ---- host function context --------------------------------------------------
 
 const als = new AsyncLocalStorage();
-const INTERRUPT = Symbol('modebox.interrupt');
 const APPROVAL = Symbol('modebox.approval');
+
+/**
+ * What `interrupt()` throws to unwind the host function. It's an Error so that
+ * host code which catches errors and rethrows them (as most wrappers do) lets
+ * it through; code that swallows it cancels the interrupt.
+ */
+export class HostFunctionInterruptSignal extends Error {
+  constructor() {
+    super('the host function was interrupted');
+    this.name = 'HostFunctionInterruptSignal';
+  }
+}
 
 /** Inside a host function: info about the call, and `interrupt()` to pause the run. */
 export function getHostFunctionContext() {
@@ -151,7 +162,8 @@ export class RunError extends Error {
     super(e.message);
     this.name = e.name;
     this.kind = e.kind;
-    this.code = 'RUN_' + e.kind.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
+    // The uncaught error's own code when it had one (say, from a host function), else the kind.
+    this.code = e.code ?? 'RUN_' + e.kind.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
     this.sandboxStack = e.stack ?? undefined;
     Object.assign(this, extra);
   }
@@ -183,10 +195,25 @@ function toolSpecs(fns, approve = [], schemas = {}, sources = [], sinks = []) {
   }));
 }
 
-function nativeOptions(o = {}) {
+const MAX_LIMIT = 2 ** 31 - 1;
+
+// Limits are positive integers. Anything else used to be dropped silently by
+// the native side (or, for 0, applied literally), so reject it up front.
+function checkLimits(limits) {
+  for (const [name, value] of Object.entries(limits ?? {})) {
+    if (value === undefined) continue;
+    const max = name === 'fuel' ? Number.MAX_SAFE_INTEGER : MAX_LIMIT;
+    if (!Number.isInteger(value) || value <= 0) throw new TypeError(`limits.${name} must be a positive integer.`);
+    if (value > max) throw new TypeError(`limits.${name} must be at most ${max}.`);
+  }
+}
+
+function nativeOptions(o = {}, cancelId) {
   const l = o.limits ?? {};
   return JSON.stringify({
+    cancelId,
     timeoutMs: l.timeoutMs,
+    cpuTimeoutMs: l.cpuTimeoutMs,
     fuel: l.fuel,
     memoryLimitBytes: l.memoryLimitBytes,
     maxHostCalls: l.maxHostCalls ?? l.maxBridgeRequests,
@@ -201,18 +228,25 @@ function nativeOptions(o = {}) {
   });
 }
 
-function makeDispatch(fns, onCall) {
+function makeDispatch(fns, onCall, abortSignal) {
   return async (msg) => {
-    const { name, id, args, resume } = JSON.parse(msg);
+    const m = JSON.parse(msg);
+    const { name, id, args, resume } = m;
     const fn = fns.get(name);
+    let signal;
     let interruptPayload;
     const ctx = {
       callId: id,
       hostFunctionName: name,
-      resume: resume === null || resume === undefined ? undefined : { resolution: decode(resume) },
+      abortSignal,
+      resume:
+        resume === null || resume === undefined
+          ? undefined
+          : { interruptionId: id, resolution: decode(resume), payload: 'payload' in m ? decode(m.payload) : undefined },
       interrupt(payload = {}) {
         interruptPayload = payload;
-        throw INTERRUPT;
+        signal = new HostFunctionInterruptSignal();
+        throw signal;
       },
     };
     try {
@@ -220,7 +254,7 @@ function makeDispatch(fns, onCall) {
       const value = await als.run(ctx, () => fn(...decode(args)));
       return JSON.stringify({ ok: true, v: encode(value) });
     } catch (e) {
-      if (e === INTERRUPT) {
+      if (signal !== undefined && e === signal) {
         return JSON.stringify({ interrupt: { kind: interruptPayload?.kind ?? 'interrupt', payload: encode(interruptPayload ?? null) } });
       }
       return JSON.stringify({ ok: false, e: { name: e?.name ?? 'Error', message: String(e?.message ?? e), code: typeof e?.code === 'string' ? e.code : undefined } });
@@ -262,6 +296,7 @@ export class Runner {
    *   process that resumes the same tokens (default: in memory, so single-use only within this process)
    */
   constructor(config = {}) {
+    checkLimits(config.limits);
     const secret = config.continuationSecret ?? process.env.MODEBOX_SECRET ?? process.env.RUN_CONTINUATION_SECRET;
     this.#engine = native.createEngine(JSON.stringify({
       secret, metering: config.metering, cacheDir: config.cacheDir,
@@ -277,22 +312,51 @@ export class Runner {
    */
   async run(options) {
     const o = { ...this.#defaults, ...options, limits: { ...this.#defaults.limits, ...options.limits } };
+    checkLimits(o.limits);
     const fns = flatten(o.hostFunctions);
     const tools = JSON.stringify(toolSpecs(fns, o.approve, o.schemas, o.sources, o.sinks));
-    const dispatch = makeDispatch(fns, o.onCall);
-    const opts = nativeOptions(o);
-    let out;
-    if (o.continuation) {
-      const resolutions = (o.resolutions ?? []).map((r) => {
-        const id = Number(r.interruptionId ?? r.id);
-        const action = r.action ?? (r.value === false ? 'deny' : r.value === true ? 'approve' : 'resume');
-        return { id, action, value: encode(r.value), message: r.message };
-      });
-      out = await native.resume(this.#engine, o.continuation, JSON.stringify(resolutions), tools, opts, dispatch);
-    } else {
-      out = await native.run(this.#engine, o.source, tools, opts, dispatch);
+    // Host functions get a signal that fires when the run is aborted or fails,
+    // so work they started for it can stop.
+    const hostAbort = new AbortController();
+    const dispatch = makeDispatch(fns, o.onCall, hostAbort.signal);
+    const signal = o.abortSignal;
+    let cancelId;
+    const onAbort = () => {
+      native.cancel(cancelId);
+      hostAbort.abort(signal.reason);
+    };
+    if (signal) {
+      cancelId = native.createCancel();
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
     }
-    const result = shape(out, o);
+    const opts = nativeOptions(o, cancelId);
+    let out;
+    try {
+      if (o.continuation) {
+        const resolutions = (o.resolutions ?? []).map((r) => {
+          const id = Number(r.interruptionId ?? r.id);
+          const action = r.action ?? (r.value === false ? 'deny' : r.value === true ? 'approve' : 'resume');
+          return { id, action, value: encode(r.value), message: r.message };
+        });
+        out = await native.resume(this.#engine, o.continuation, JSON.stringify(resolutions), tools, opts, dispatch);
+      } else {
+        out = await native.run(this.#engine, o.source, tools, opts, dispatch);
+      }
+    } finally {
+      if (signal) {
+        signal.removeEventListener('abort', onAbort);
+        native.dropCancel(cancelId);
+      }
+    }
+    let result;
+    try {
+      result = shape(out, o);
+    } catch (e) {
+      hostAbort.abort(e);
+      throw e;
+    }
+    if (result.status === 'failed') hostAbort.abort(result.error);
     if (o.onLog) for (const l of result.logs) o.onLog(l);
     return result;
   }
