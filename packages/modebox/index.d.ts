@@ -69,7 +69,8 @@ export declare class RunError extends Error {
 export interface HostFunctionContext {
   callId: number;
   hostFunctionName: string;
-  resume?: { resolution: unknown };
+  /** Set when the call runs again after `interrupt()`: the resolution, and the payload it interrupted with. */
+  resume?: { interruptionId: number; resolution: unknown; payload: unknown };
   interrupt(payload?: { kind?: string; [k: string]: unknown }): never;
 }
 

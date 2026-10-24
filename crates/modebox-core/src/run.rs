@@ -847,6 +847,7 @@ impl<'a> Driver<'a> {
             id: call.id,
             run_id: self.run_id.clone(),
             resume: None,
+            interrupt_payload: None,
         };
         if let Some(reason) = tool.needs_approval(&probe).or_else(|| self.flow_check(tool)) {
             call.kind = Some("approval".into());
@@ -904,13 +905,9 @@ impl<'a> Driver<'a> {
         }
         let args = call.args();
         self.emit_event(Event::CallStarted { id: call.id, tool: call.name.clone(), args: args.clone() });
-        let c = Call {
-            name: call.name.clone(),
-            args,
-            id: call.id,
-            run_id: self.run_id.clone(),
-            resume: call.resume.as_ref().map(Value::from_tagged),
-        };
+        let resume = call.resume.as_ref().map(Value::from_tagged);
+        let interrupt_payload = resume.as_ref().and(call.payload.as_ref()).map(Value::from_tagged);
+        let c = Call { name: call.name.clone(), args, id: call.id, run_id: self.run_id.clone(), resume, interrupt_payload };
         let handle = tokio::spawn(tool.handler.call(c));
         self.aborts.push(handle.abort_handle());
         let id = call.id;

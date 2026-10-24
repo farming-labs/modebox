@@ -214,14 +214,18 @@ function nativeOptions(o = {}) {
 
 function makeDispatch(fns, onCall) {
   return async (msg) => {
-    const { name, id, args, resume } = JSON.parse(msg);
+    const m = JSON.parse(msg);
+    const { name, id, args, resume } = m;
     const fn = fns.get(name);
     let signal;
     let interruptPayload;
     const ctx = {
       callId: id,
       hostFunctionName: name,
-      resume: resume === null || resume === undefined ? undefined : { resolution: decode(resume) },
+      resume:
+        resume === null || resume === undefined
+          ? undefined
+          : { interruptionId: id, resolution: decode(resume), payload: 'payload' in m ? decode(m.payload) : undefined },
       interrupt(payload = {}) {
         interruptPayload = payload;
         signal = new HostFunctionInterruptSignal();

@@ -4,6 +4,10 @@ Notable changes to modebox. The format follows [Keep a Changelog](https://keepac
 
 ## [Unreleased]
 
+### Added
+
+- **A resumed host function sees the payload it interrupted with.** When a call runs again after `interrupt()`, its resume context carries the original payload next to the resolution: `resume.payload` in Node and Python, and `Call::interrupt_payload` in Rust. A host function that raises several kinds of interrupt no longer has to keep its own record of which question it asked. Node's `resume` also has the `interruptionId` it answers.
+
 ### Fixed
 
 - **Node: `interrupt()` survives host code that catches errors.** It used to throw a symbol, so a host function wrapped in a `try`/`catch` that rethrows only `Error`s swallowed the interrupt and returned normally. It now throws a `HostFunctionInterruptSignal` (an `Error`), which such wrappers pass through.

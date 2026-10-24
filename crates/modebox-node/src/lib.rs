@@ -103,12 +103,15 @@ fn toolbox(tools: &str, dispatch: Arc<Dispatch>) -> napi::Result<Toolbox> {
 }
 
 async fn dispatch_call(d: &Dispatch, call: Call) -> Result<Value, ToolError> {
-    let msg = json!({
+    let mut msg = json!({
         "name": call.name,
         "id": call.id,
         "args": Value::Array(call.args.clone()).to_tagged(),
         "resume": call.resume.as_ref().map(Value::to_tagged),
     });
+    if let Some(payload) = &call.interrupt_payload {
+        msg["payload"] = payload.to_tagged();
+    }
     let promise = d.call_async(msg.to_string()).await.map_err(|e| ToolError::new(format!("host dispatch failed: {e}")))?;
     let out = promise.await.map_err(|e| ToolError::new(e.reason.clone()))?;
     let out: Json = serde_json::from_str(&out).map_err(|e| ToolError::new(format!("bad host reply: {e}")))?;

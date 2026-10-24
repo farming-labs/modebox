@@ -95,7 +95,7 @@ class ModeboxTest(unittest.IsolatedAsyncioTestCase):
             ctx = get_host_function_context()
             if ctx.resume is None:
                 ctx.interrupt({"kind": "sign_in", "url": "https://example.test"})
-            return f"token:{ctx.resume.resolution}"
+            return f"token:{ctx.resume.resolution}:{ctx.resume.payload['url']}"
 
         host_functions = {"auth": {"login": login}}
         a = await runner.run("const r = Math.random(); const t = await auth.login(); [t, r]", host_functions=host_functions)
@@ -104,7 +104,7 @@ class ModeboxTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(a.interruptions[0].payload["url"], "https://example.test")
         resolutions = [modebox.resume_with(a.interruptions[0].id, "abc")]
         b = await runner.run(host_functions=host_functions, continuation=a.continuation, resolutions=resolutions)
-        self.assertEqual(b.value[0], "token:abc")
+        self.assertEqual(b.value[0], "token:abc:https://example.test")
         self.assertEqual(calls, 2)
         # single-use
         with self.assertRaises(RunError) as c:

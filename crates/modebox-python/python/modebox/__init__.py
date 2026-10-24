@@ -253,9 +253,11 @@ def _error_message(e: BaseException) -> str:
 
 @dataclass(frozen=True)
 class Resume:
-    """How an interrupted call was resolved: the ``value`` passed with ``resume_with``."""
+    """How an interrupted call was resolved: the ``value`` passed with ``resume_with``,
+    and the ``payload`` the call interrupted with."""
 
     resolution: Any
+    payload: Any = None
 
 
 class _Interrupt(BaseException):
@@ -526,7 +528,8 @@ def _make_dispatch(fns: Mapping[str, Callable[..., Any]], on_call: Callable[[str
         m = json.loads(msg)
         name, call_id = m["name"], m["id"]
         resume = m.get("resume")
-        ctx = HostFunctionContext(call_id, name, None if resume is None else Resume(_decode(resume)))
+        payload = _decode(m["payload"]) if "payload" in m else None
+        ctx = HostFunctionContext(call_id, name, None if resume is None else Resume(_decode(resume), payload))
         token = _current.set(ctx)
         try:
             if on_call is not None:

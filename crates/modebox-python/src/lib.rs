@@ -108,12 +108,15 @@ fn toolbox(tools: &str, dispatch: Arc<Dispatch>) -> PyResult<Toolbox> {
 }
 
 async fn dispatch_call(d: &Dispatch, call: Call) -> Result<Value, ToolError> {
-    let msg = json!({
+    let mut msg = json!({
         "name": call.name,
         "id": call.id,
         "args": Value::Array(call.args.clone()).to_tagged(),
         "resume": call.resume.as_ref().map(Value::to_tagged),
     });
+    if let Some(payload) = &call.interrupt_payload {
+        msg["payload"] = payload.to_tagged();
+    }
     let fail = |e: PyErr| ToolError::new(format!("host dispatch failed: {e}"));
     // Start the coroutine on the caller's event loop, then wait for it here.
     let reply = Python::attach(|py| {

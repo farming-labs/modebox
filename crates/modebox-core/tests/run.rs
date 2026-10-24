@@ -536,7 +536,11 @@ async fn tool_raised_interrupts_resume_with_a_value() {
     tools.func("auth.token", |c: Call| async move {
         match &c.resume {
             None => Err(c.interrupt("sign_in", Value::object([("url", Value::from("https://example.test/login"))]))),
-            Some(code) => Ok(Value::from(format!("token-for-{}", code.as_str().unwrap_or("?")))),
+            Some(code) => {
+                // The tool also gets back the payload it interrupted with.
+                let url = c.interrupt_payload.as_ref().and_then(|p| p.get("url")).and_then(Value::as_str).unwrap_or("?");
+                Ok(Value::from(format!("token-for-{}@{url}", code.as_str().unwrap_or("?"))))
+            }
         }
     });
     let first = engine().run("const t = await auth.token(); t.toUpperCase()", &tools, opts()).await;
@@ -546,7 +550,7 @@ async fn tool_raised_interrupts_resume_with_a_value() {
     let r = engine()
         .resume(&s.continuation, [(s.interrupts[0].id, Resolution::ResumeWith(Value::from("abc")))], &tools, opts())
         .await;
-    assert_eq!(ok(&r), &Value::from("TOKEN-FOR-ABC"));
+    assert_eq!(ok(&r), &Value::from("TOKEN-FOR-ABC@HTTPS://EXAMPLE.TEST/LOGIN"));
 }
 
 #[tokio::test]

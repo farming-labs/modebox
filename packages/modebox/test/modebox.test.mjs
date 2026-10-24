@@ -35,12 +35,14 @@ test('failures throw RunError with kind and code', async () => {
 test('getHostFunctionContext().interrupt() suspends; resume re-invokes with the resolution', async () => {
   const runner = createRunner({ continuationSecret: 'k'.repeat(32) });
   let calls = 0;
+  let resumed;
   const hostFunctions = {
     auth: {
       login: () => {
         calls++;
         const ctx = getHostFunctionContext();
         if (!ctx.resume) ctx.interrupt({ kind: 'sign_in', url: 'https://example.test' });
+        resumed = ctx.resume;
         return `token:${ctx.resume.resolution}`;
       },
     },
@@ -52,6 +54,9 @@ test('getHostFunctionContext().interrupt() suspends; resume re-invokes with the 
   const b = await runner.run({ hostFunctions, continuation: a.continuation, resolutions: [{ interruptionId: a.interruptions[0].id, value: 'abc' }] });
   assert.equal(b.value[0], 'token:abc');
   assert.equal(calls, 2);
+  // the re-invoked call also sees which interrupt it answers
+  assert.equal(resumed.interruptionId, a.interruptions[0].id);
+  assert.equal(resumed.payload.url, 'https://example.test');
   // single-use
   await assert.rejects(runner.run({ hostFunctions, continuation: a.continuation, resolutions: [{ interruptionId: a.interruptions[0].id, value: 'x' }] }), (e) => e.kind === 'InvalidContinuation');
 });
