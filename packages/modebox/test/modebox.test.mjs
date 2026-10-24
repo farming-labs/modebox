@@ -56,6 +56,25 @@ test('getHostFunctionContext().interrupt() suspends; resume re-invokes with the 
   await assert.rejects(runner.run({ hostFunctions, continuation: a.continuation, resolutions: [{ interruptionId: a.interruptions[0].id, value: 'x' }] }), (e) => e.kind === 'InvalidContinuation');
 });
 
+test('interrupt() unwinds through host code that rethrows errors', async () => {
+  const runner = createRunner({ continuationSecret: 'k'.repeat(32) });
+  const hostFunctions = {
+    svc: {
+      call: () => {
+        try {
+          getHostFunctionContext().interrupt({ kind: 'auth' });
+        } catch (e) {
+          if (e instanceof Error) throw e;
+          return 'swallowed';
+        }
+      },
+    },
+  };
+  const a = await runner.run({ source: 'return await svc.call()', hostFunctions });
+  assert.equal(a.status, 'interrupted');
+  assert.equal(a.interruptions[0].kind, 'auth');
+});
+
 test('approval policies pause before the host function runs', async () => {
   const runner = createRunner({ continuationSecret: 'k'.repeat(32) });
   const sent = [];

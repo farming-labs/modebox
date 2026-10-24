@@ -4,6 +4,10 @@ Notable changes to modebox. The format follows [Keep a Changelog](https://keepac
 
 ## [Unreleased]
 
+### Fixed
+
+- **Node: `interrupt()` survives host code that catches errors.** It used to throw a symbol, so a host function wrapped in a `try`/`catch` that rethrows only `Error`s swallowed the interrupt and returned normally. It now throws a `HostFunctionInterruptSignal` (an `Error`), which such wrappers pass through.
+
 ## [0.1.3] - 2026-10-14
 
 ### Security

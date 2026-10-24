@@ -74,6 +74,9 @@ export interface HostFunctionContext {
 }
 
 export declare function getHostFunctionContext(): HostFunctionContext;
+
+/** Thrown by `interrupt()`. Rethrow it if you catch it, or the interrupt is cancelled. */
+export declare class HostFunctionInterruptSignal extends Error {}
 export declare function requireApproval<F extends HostFunction>(fn: F): F;
 
 export interface RunnerConfig {

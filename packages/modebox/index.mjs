@@ -130,8 +130,19 @@ function decode(j) {
 // ---- host function context --------------------------------------------------
 
 const als = new AsyncLocalStorage();
-const INTERRUPT = Symbol('modebox.interrupt');
 const APPROVAL = Symbol('modebox.approval');
+
+/**
+ * What `interrupt()` throws to unwind the host function. It's an Error so that
+ * host code which catches errors and rethrows them (as most wrappers do) lets
+ * it through; code that swallows it cancels the interrupt.
+ */
+export class HostFunctionInterruptSignal extends Error {
+  constructor() {
+    super('the host function was interrupted');
+    this.name = 'HostFunctionInterruptSignal';
+  }
+}
 
 /** Inside a host function: info about the call, and `interrupt()` to pause the run. */
 export function getHostFunctionContext() {
@@ -205,6 +216,7 @@ function makeDispatch(fns, onCall) {
   return async (msg) => {
     const { name, id, args, resume } = JSON.parse(msg);
     const fn = fns.get(name);
+    let signal;
     let interruptPayload;
     const ctx = {
       callId: id,
@@ -212,7 +224,8 @@ function makeDispatch(fns, onCall) {
       resume: resume === null || resume === undefined ? undefined : { resolution: decode(resume) },
       interrupt(payload = {}) {
         interruptPayload = payload;
-        throw INTERRUPT;
+        signal = new HostFunctionInterruptSignal();
+        throw signal;
       },
     };
     try {
@@ -220,7 +233,7 @@ function makeDispatch(fns, onCall) {
       const value = await als.run(ctx, () => fn(...decode(args)));
       return JSON.stringify({ ok: true, v: encode(value) });
     } catch (e) {
-      if (e === INTERRUPT) {
+      if (signal !== undefined && e === signal) {
         return JSON.stringify({ interrupt: { kind: interruptPayload?.kind ?? 'interrupt', payload: encode(interruptPayload ?? null) } });
       }
       return JSON.stringify({ ok: false, e: { name: e?.name ?? 'Error', message: String(e?.message ?? e), code: typeof e?.code === 'string' ? e.code : undefined } });
