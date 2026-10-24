@@ -20,6 +20,10 @@ Notable changes to modebox. The format follows [Keep a Changelog](https://keepac
 
 - **Node: `interrupt()` survives host code that catches errors.** It used to throw a symbol, so a host function wrapped in a `try`/`catch` that rethrows only `Error`s swallowed the interrupt and returned normally. It now throws a `HostFunctionInterruptSignal` (an `Error`), which such wrappers pass through.
 
+### Security
+
+- Updated wasmtime to 49.0.4, rustls-webpki to 0.103.16, webpki-root-certs to 1.0.11 and tokio to 1.54.1, for [RUSTSEC-2026-0378](https://rustsec.org/advisories/RUSTSEC-2026-0378), [0379](https://rustsec.org/advisories/RUSTSEC-2026-0379), [0382](https://rustsec.org/advisories/RUSTSEC-2026-0382), [0383](https://rustsec.org/advisories/RUSTSEC-2026-0383) and [0386](https://rustsec.org/advisories/RUSTSEC-2026-0386). The one that applies most directly is 0379: on aarch64, which includes Apple Silicon, Cranelift could compile a large `br_table` to jump to the wrong target. The certificate fixes cover `fetch()` and the S3, GCS and Azure stores. 0378 is in the component model and 0386 in tokio's `AsyncFd`, neither of which modebox uses directly.
+
 ## [0.1.3] - 2026-10-14
 
 ### Security
